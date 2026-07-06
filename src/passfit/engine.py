@@ -192,7 +192,8 @@ def calc_climate_legacy(p: dict, pattern: Pattern, ref: date,
         warns_t += ("월 전체 사용 불가 — 선불 8/29·후불 8/31까지. 9월부터 모두의카드 전환 필요",)
     if uncovered:
         warns_t += (f"신분당선·GTX·광역버스 {uncovered:,}원은 별도 부담 (기동카 미적용)",)
-    # rebate 음수 = 이용량이 적어 정액권이 종량제보다 손해라는 뜻 (그대로 노출, 랭킹은 net_cost 기준)
+    # legacy(정액권)만 rebate가 음수 가능 = 이용량이 적어 종량제보다 손해라는 뜻.
+    # 다른 패스(동백·이응)는 항상 0 이상. 음수도 그대로 노출하고 랭킹은 net_cost 기준.
     return PassOption(p["id"], p["name"], "기후동행카드 30일권", rebate,
                       net, note, warns_t, _srcs(p))
 
@@ -211,7 +212,7 @@ def calc_eung(p: dict, pattern: Pattern) -> PassOption:
 
 def compare_all(pattern: Pattern, ref: date, age: int, residence: str,
                 income_level: str, children_count: int, is_first_month: bool,
-                free_ride_status: str, has_postpaid_climate_card: bool) -> list[PassOption]:
+                has_postpaid_climate_card: bool) -> list[PassOption]:
     from passfit.normalize import resolve_region
     from passfit.data_loader import load_passes
     data = load_passes()
@@ -228,7 +229,7 @@ def compare_all(pattern: Pattern, ref: date, age: int, residence: str,
     opts.append(PassOption("modu-card", modu["name"], best.label, best.rebate,
                            best.net_cost, note, best.warnings, _srcs(modu)))
 
-    if region.sido in (None, "서울", "경기", "인천"):       # 수도권/미상만 기동카 후보
+    if region.sido in ("서울", "경기", "인천"):       # 수도권만 기동카 후보 (미해석 지역엔 서울 전용 패스 미노출)
         legacy = calc_climate_legacy(passes["climate-card-legacy"], pattern, ref,
                                      has_postpaid_climate_card)
         if legacy:
@@ -237,6 +238,7 @@ def compare_all(pattern: Pattern, ref: date, age: int, residence: str,
         opts.append(calc_dongbaek(passes["dongbaek-pass"], pattern))
     if region.sido == "세종":
         opts.append(calc_eung(passes["eung-pass"], pattern))
+    # 동점 시 안정정렬이 삽입순(모두의카드 우선) 유지 — 의도된 tie-break
     return sorted(opts, key=lambda o: o.net_cost)
 
 def collect_notices(ref: date, sido: str | None) -> list[str]:
@@ -244,7 +246,8 @@ def collect_notices(ref: date, sido: str | None) -> list[str]:
     data = load_passes()
     notices = []
     legacy = next(p for p in data["passes"] if p["id"] == "climate-card-legacy")
-    if ref > date.fromisoformat(legacy["prepaid_valid_until"]) and sido in (None, "서울", "경기", "인천"):
+    # "종료" 문구는 완전 종료(후불 마지막 유효일 이후, 9/1+)에만. 미해석 지역(None)엔 서울 전용 안내 미노출.
+    if ref > date.fromisoformat(legacy["postpaid"]["valid_until"]) and sido in ("서울", "경기", "인천"):
         notices.append(f"기후동행카드는 종료되었습니다. {legacy['transition_note']}")
     if ref <= date(2026, 9, 30):
         notices.append("한시 혜택(반값 기준금액·시차시간 +30%p)은 9월 이용분까지 — 10월부터 표준 원복 예정")

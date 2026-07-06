@@ -6,7 +6,7 @@ def commuter(rides=44, fare=1550, mode="subway"):
 
 def base_user(**kw):
     d = dict(age=30, residence="서울", income_level="general", children_count=0,
-             is_first_month=False, free_ride_status="none", has_postpaid_climate_card=False)
+             is_first_month=False, has_postpaid_climate_card=False)
     d.update(kw); return d
 
 def test_august_includes_legacy_with_forced_warning():
@@ -47,3 +47,14 @@ def test_dongbaek_for_busan_resident():
     opts = compare_all(commuter(rides=60, fare=1550), ref=date(2026, 7, 31), **base_user(residence="부산"))
     ids = {o.pass_id for o in opts}
     assert "dongbaek-pass" in ids and "climate-card-legacy" not in ids
+
+def test_unknown_region_no_seoul_legacy():
+    opts = compare_all(commuter(), ref=date(2026, 7, 31), **base_user(residence="제주특별자치도"))
+    assert not [o for o in opts if o.pass_id == "climate-card-legacy"]
+
+def test_notices_not_ended_during_postpaid_window():
+    from passfit.engine import collect_notices
+    # 8/30: 후불 아직 유효 → "종료되었습니다" 나오면 안 됨
+    assert not any("종료되었습니다" in n for n in collect_notices(ref=date(2026, 8, 30), sido="서울"))
+    # 9/1: 완전 종료 → 전환 안내 나옴
+    assert any("전환" in n for n in collect_notices(ref=date(2026, 9, 1), sido="서울"))
