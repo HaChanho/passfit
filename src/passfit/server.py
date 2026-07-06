@@ -26,7 +26,7 @@ def _region_note(residence: str) -> str:
     r = resolve_region(residence)
     if r.confidence == "unknown":
         return f"거주지 '{residence}'를 해석하지 못해 전국 기준(모두의카드)으로만 계산했습니다."
-    return f"거주지는 '{r.sido}'({r.region_class})로 해석했습니다."
+    return f"거주지는 '{r.sido}'({r.region_class})으로 해석했습니다."
 
 
 CAT_KO = {"general": "일반", "youth": "청년", "senior": "어르신",
@@ -93,7 +93,8 @@ def compare_passes_for_commute(
     real monthly cost, from PassFit(패스핏). Use when the user asks which transit
     pass/card saves money — e.g. '교통비 아끼는 법', 'K-패스랑 기후동행카드 뭐가 이득?',
     '월 교통비 12만원인데 아낄 방법?'. If the user only knows weekly commute days,
-    convert: 주 5일 왕복 ≈ monthly_rides 44."""
+    convert: 주 5일 왕복 ≈ monthly_rides 44. offpeak_rides = 출퇴근 시차시간
+    (05:30~06:30/09~10/16~17/19~20시) 승차 횟수 — 한시 환급 할증 대상."""
     inp = _build_commute_input(
         monthly_rides, fare_per_ride, monthly_spend, rides, offpeak_rides,
         age, residence, income_level, children_count, is_first_month,
@@ -149,7 +150,10 @@ def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
                                       "climate-card-plus", "dongbaek-pass",
                                       "eung-pass"]) -> str:
     """Get details(자격·환급률·기준금액·신청 방법) of one Korean transit pass
-    from PassFit(패스핏)."""
+    from PassFit(패스핏). Valid pass_id: modu-card(모두의카드),
+    climate-card-legacy(기후동행카드), climate-card-plus(기후동행카드 플러스),
+    dongbaek-pass(부산 동백패스), eung-pass(세종 이응패스). Discover ids via
+    list_transit_passes."""
     data = load_passes()
     p = next(x for x in data["passes"] if x["id"] == pass_id)
     lines = [f"## {p['name']}"]
@@ -170,7 +174,8 @@ def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
 
 @mcp.tool(annotations={"title": "절약 시뮬레이션", **RO})
 def simulate_pass_savings(
-    pass_id: str,
+    pass_id: Literal["modu-card", "climate-card-legacy", "climate-card-plus",
+                     "dongbaek-pass", "eung-pass"],
     monthly_rides: int | None = None,
     fare_per_ride: int | None = None,
     monthly_spend: int | None = None,
@@ -188,11 +193,13 @@ def simulate_pass_savings(
     detail: Literal["concise", "detailed"] = "concise",
 ) -> str:
     """Simulate monthly/yearly savings(월·연 절약액과 손익분기) for ONE specific
-    pass from PassFit(패스핏)."""
+    pass from PassFit(패스핏). Valid pass_id: modu-card(모두의카드),
+    climate-card-legacy(기후동행카드), climate-card-plus(기후동행카드 플러스),
+    dongbaek-pass(부산 동백패스), eung-pass(세종 이응패스). Discover ids via
+    list_transit_passes. offpeak_rides = 출퇴근 시차시간(05:30~06:30/09~10/16~17/
+    19~20시) 승차 횟수 — 한시 환급 할증 대상."""
     data = load_passes()
-    p = next((x for x in data["passes"] if x["id"] == pass_id), None)
-    if p is None:
-        raise ToolError("pass_id가 올바르지 않습니다. list_transit_passes로 확인하세요.")
+    p = next(x for x in data["passes"] if x["id"] == pass_id)
     if p.get("simulate_policy") == "alias_to_base":            # plus → modu-card
         note = f"'{p['name']}'는 모두의카드 기반이라 모두의카드로 계산합니다.\n\n"
         p = next(x for x in data["passes"] if x["id"] == p["calculation_alias_of"])
@@ -235,7 +242,8 @@ def check_pass_eligibility(age: int, residence: str,
                            free_ride_status: Literal["none", "eligible",
                                                      "uses_free_ride_card"] = "none") -> str:
     """Check which Korean transit passes the user qualifies for(자격 확인),
-    with reasons, from PassFit(패스핏)."""
+    with reasons, from PassFit(패스핏). 모두의카드·부산 동백패스·세종 이응패스의
+    자격을 확인합니다(기후동행카드는 이용 가능 여부라 compare에서 다룸)."""
     data = load_passes()
     region = resolve_region(residence)
     modu = next(p for p in data["passes"] if p["id"] == "modu-card")
