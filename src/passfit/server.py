@@ -145,6 +145,16 @@ def list_transit_passes(region: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _fmt(v):
+    if isinstance(v, bool):
+        return "예" if v else "아니오"
+    if isinstance(v, dict):
+        return ", ".join(f"{k}: {_fmt(x)}" for k, x in v.items())
+    if isinstance(v, list):
+        return ", ".join(_fmt(x) for x in v)
+    return str(v)
+
+
 @mcp.tool(annotations={"title": "패스 상세", **RO})
 def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
                                       "climate-card-plus", "dongbaek-pass",
@@ -167,7 +177,7 @@ def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
                 "monthly_price", "monthly_cap", "scope_note", "note",
                 "transition_note", "included_scope"):
         if key in p:
-            lines.append(f"- **{key}**: {p[key]}")
+            lines.append(f"- **{key}**: {_fmt(p[key])}")
     lines.append("- **출처**: " + ", ".join(s["url"] for s in p["sources"]))
     return "\n".join(lines)
 
@@ -257,8 +267,14 @@ def check_pass_eligibility(age: int, residence: str,
                      + (f" (거주지 {region.sido} 상위 혜택 반영)" if region.sido else ""))
     for pid, name, sido in [("dongbaek-pass", "부산 동백패스", "부산"),
                             ("eung-pass", "세종 이응패스", "세종")]:
-        ok = region.sido == sido
-        lines.append(f"- {name}: {'✅' if ok else '❌ ' + sido + ' 거주자 전용'}")
+        p = next(x for x in data["passes"] if x["id"] == pid)
+        amin = p.get("eligibility", {}).get("age_min", 0)
+        if region.sido != sido:
+            lines.append(f"- {name}: ❌ {sido} 거주자 전용")
+        elif age < amin:
+            lines.append(f"- {name}: ❌ 만 {amin}세 이상 대상 (현재 {age}세)")
+        else:
+            lines.append(f"- {name}: ✅")
     if free_ride_status != "none":
         for fr in data["free_ride_info"]:
             if fr["region"] in (region.sido, "전국"):

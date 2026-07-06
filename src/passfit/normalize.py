@@ -20,15 +20,20 @@ def resolve_region(text: str) -> RegionInfo:
         base = re.sub(r"[군시구]$", "", z["name"])
         if base in t:
             return RegionInfo(text, z["sido"], z["class"], "exact")
-    # 2) 시도명 직접 포함 — 여러 개가 부분일치하면 t에서 가장 앞에 나온 것
-    #    (한국 주소는 도/광역시가 시·군보다 앞에 옴: "경기도 광주시" → 경기)
-    hits = [(t.index(sido), sido, cls) for sido, cls in regions["sido_class"].items() if sido in t]
-    if hits:
-        _, sido, cls = min(hits)
-        return RegionInfo(text, sido, cls, "exact")
-    # 3) alias 부분일치 (긴 alias 우선 — '강화'가 '경기'보다 먼저 걸리게 정렬)
-    for alias, sido in sorted(regions["aliases"].items(), key=lambda kv: -len(kv[0])):
-        if alias in t:
+    # 2) 시도명(exact) + alias(alias)를 함께: t에서 가장 앞, 동률이면 더 긴 매칭 우선
+    #    (예: "해운대구"는 alias '해운대'(부산, index 0)가 sido '대구'(index 2)보다 앞서 이김)
+    candidates = []  # (index, -len, sido, region_class, confidence)
+    for sido, cls in regions["sido_class"].items():
+        i = t.find(sido)
+        if i != -1:
+            candidates.append((i, -len(sido), sido, cls, "exact"))
+    for alias, sido in regions["aliases"].items():
+        i = t.find(alias)
+        if i != -1:
             cls = regions["sido_class"].get(sido, regions["region_class_default"])
-            return RegionInfo(text, sido, cls, "alias")
+            candidates.append((i, -len(alias), sido, cls, "alias"))
+    if candidates:
+        candidates.sort(key=lambda c: (c[0], c[1]))   # index 오름차순, 그 다음 -len 오름차순(긴 매칭 우선)
+        _, _, sido, cls, conf = candidates[0]
+        return RegionInfo(text, sido, cls, conf)
     return RegionInfo(text, None, regions["region_class_default"], "unknown")

@@ -46,3 +46,13 @@ async def test_details_and_list_policies():
         assert "모두의카드" in d.content[0].text and "따릉이" in d.content[0].text
         l = await c.call_tool("list_transit_passes", {"region": "서울"})
         assert "기후동행카드 플러스" in l.content[0].text
+
+
+async def test_eligibility_enforces_age_min():
+    async with Client(mcp) as c:
+        r = await c.call_tool("check_pass_eligibility",
+                              {"age": 15, "residence": "부산"})
+        assert "❌" in r.content[0].text and "동백" in r.content[0].text
+        r2 = await c.call_tool("check_pass_eligibility",
+                               {"age": 40, "residence": "부산"})
+        assert "부산 동백패스: ✅" in r2.content[0].text

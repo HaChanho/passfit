@@ -28,3 +28,10 @@ def test_compound_city_name_disambiguation():
     assert resolve_region("경기도 광주시").sido == "경기"
     assert resolve_region("광주광역시").sido == "광주"
     assert resolve_region("광주").sido == "광주"
+
+
+def test_busan_district_not_misread_as_daegu():
+    r = resolve_region("해운대구")
+    assert r.sido == "부산"          # '해운대' alias가 '대구' 부분일치를 이김
+    r2 = resolve_region("부산 해운대구")
+    assert r2.sido == "부산"
