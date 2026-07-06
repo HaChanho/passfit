@@ -29,3 +29,15 @@ def test_best_of_three_crossover():
     high = calc_modu_best(MODU, Pattern((seg("subway", 1550, 90),)), 30, "서울",
                           "general", 0, date(2026, 9, 30), False, "수도권")
     assert "정액" in high.label
+
+def test_flat_path_respects_min_rides_via_best():
+    # 14회 고액(GTX): 15회 미만이라 정액형도 환급 0 이어야 함
+    p = Pattern((Segment("gtx", 8000, 14),))
+    r = calc_modu_best(MODU, p, 30, "서울", "general", 0, date(2026, 10, 31), False, "수도권")
+    assert r.rebate == 0 and "15회" in r.note
+
+def test_flat_path_first_month_exempt_via_best():
+    # 14회지만 가입 첫 달 → 계산 진행(환급 > 0)
+    p = Pattern((Segment("gtx", 8000, 14),))
+    r = calc_modu_best(MODU, p, 30, "서울", "general", 0, date(2026, 10, 31), True, "수도권")
+    assert r.rebate > 0

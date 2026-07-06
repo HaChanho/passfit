@@ -78,14 +78,21 @@ def _active_benefit(pass_def: dict, benefit_id: str, ref: date) -> dict | None:
             return b
     return None
 
+def _meets_min_rides(pass_def: dict, pattern: Pattern, is_first_month: bool) -> bool:
+    """월 최소 이용 요건 충족 여부 (정률·정액 공통). 총액만 알면 확인 불가 → 통과(경고 별도)."""
+    rides = pattern.total_rides
+    if rides is None:
+        return True
+    cond = pass_def["conditions"]
+    return rides >= cond["min_rides_month"] or (is_first_month and cond["first_month_min_rides_exempt"])
+
 def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: float,
                      ref: date, is_first_month: bool) -> CalcResult:
     label = "모두의카드 기본형(정률)"
     spend = pattern.total_spend
     rides = pattern.total_rides
     cond = pass_def["conditions"]
-    if (rides is not None and rides < cond["min_rides_month"]
-            and not (is_first_month and cond["first_month_min_rides_exempt"])):
+    if not _meets_min_rides(pass_def, pattern, is_first_month):
         return CalcResult(label, 0, spend,
                           note=f"월 {cond['min_rides_month']}회 미만이라 환급 없음 (가입 첫 달은 예외)")
     bonus = _active_benefit(pass_def, "offpeak-bonus", ref)
@@ -106,6 +113,7 @@ def _flat_eligible_spend(pattern: Pattern, variant: str) -> tuple[int, int]:
     fares = load_fares()
     covered = excluded = 0
     for s in pattern.segments:
+        # '1회 총요금 3,000원 미만 수단' 규칙 — 장거리 고액 승차는 모드 무관 제외
         if s.mode in fares["flat_standard_excluded_modes"] or s.fare_per_ride >= fares["flat_standard_fare_limit"]:
             excluded += s.fare_per_ride * s.monthly_rides
         else:
@@ -114,6 +122,7 @@ def _flat_eligible_spend(pattern: Pattern, variant: str) -> tuple[int, int]:
 
 def calc_modu_flat(pass_def: dict, pattern: Pattern, category: str, region_class: str,
                    ref: date, variant: str) -> CalcResult:
+    # 순수 정액 환급 계산 (15회 요건은 calc_modu_best에서 공통 적용). _flat_eligible_spend가 수단별 자격 판정.
     idx = 0 if variant == "standard" else 1
     half = _active_benefit(pass_def, "half-price", ref)
     table = half["thresholds"] if half else pass_def["flat_thresholds"]
@@ -134,6 +143,11 @@ def calc_modu_best(pass_def: dict, pattern: Pattern, age: int, sido: str | None,
                    income_level: str, children_count: int, ref: date,
                    is_first_month: bool, region_class: str) -> CalcResult:
     category, rate = determine_category(pass_def, age, sido, income_level, children_count)
+    # 15회 최소 이용 요건은 정률·정액 공통 (정본 §2). 미달 시 세 방식 모두 환급 0.
+    if not _meets_min_rides(pass_def, pattern, is_first_month):
+        cond = pass_def["conditions"]
+        return CalcResult("모두의카드", 0, pattern.total_spend,
+                          note=f"월 {cond['min_rides_month']}회 미만이라 환급 없음 (가입 첫 달은 예외)")
     options = [
         calc_modu_rebate(pass_def, pattern, category, rate, ref, is_first_month),
         calc_modu_flat(pass_def, pattern, category, region_class, ref, "standard"),
