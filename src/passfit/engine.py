@@ -67,6 +67,7 @@ def determine_category(pass_def: dict, age: int, sido: str | None,
         candidates.append("youth")
     if age >= pass_def["senior_age_min"]:
         candidates.append("senior")
+    # 복수 유형 해당 시 최고 환급률 선택. 동률이면 candidates 추가 순서상 앞선 것(rate 동일하므로 rebate엔 영향 없음)
     best = max(candidates, key=lambda c: rates[c])
     return best, rates[best]
 
@@ -78,12 +79,13 @@ def _active_benefit(pass_def: dict, benefit_id: str, ref: date) -> dict | None:
 
 def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: float,
                      ref: date, is_first_month: bool) -> CalcResult:
+    label = "모두의카드 기본형(정률)"
     spend = pattern.total_spend
     rides = pattern.total_rides
     cond = pass_def["conditions"]
     if (rides is not None and rides < cond["min_rides_month"]
             and not (is_first_month and cond["first_month_min_rides_exempt"])):
-        return CalcResult("모두의카드 기본형(정률)", 0, spend,
+        return CalcResult(label, 0, spend,
                           note=f"월 {cond['min_rides_month']}회 미만이라 환급 없음 (가입 첫 달은 예외)")
     bonus = _active_benefit(pass_def, "offpeak-bonus", ref)
     offpeak_spend = pattern.offpeak_spend if bonus else 0
@@ -92,4 +94,4 @@ def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: floa
     rebate = round(rebate)
     note = "시차시간 승차분 +30%p 적용 (9월 이용분까지)" if bonus and offpeak_spend else ""
     warnings = ("탑승 횟수를 알 수 없어 15회 요건을 확인하지 못했습니다 (월 15회 이상 이용 가정 추정치)",) if rides is None else ()
-    return CalcResult("모두의카드 기본형(정률)", rebate, spend - rebate, note, warnings)
+    return CalcResult(label, rebate, spend - rebate, note, warnings)
