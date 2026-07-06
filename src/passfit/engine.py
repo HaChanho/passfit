@@ -154,3 +154,101 @@ def calc_modu_best(pass_def: dict, pattern: Pattern, age: int, sido: str | None,
         calc_modu_flat(pass_def, pattern, category, region_class, ref, "plus"),
     ]
     return max(options, key=lambda r: r.rebate)   # 제도 자체가 최대 환급 자동 적용
+
+
+@dataclass(frozen=True)
+class PassOption:
+    pass_id: str
+    name: str
+    label: str
+    rebate: int
+    net_cost: int
+    note: str = ""
+    warnings: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
+
+def _srcs(p: dict) -> tuple[str, ...]:
+    return tuple(s["url"] for s in p.get("sources", []))
+
+def calc_climate_legacy(p: dict, pattern: Pattern, ref: date,
+                        has_postpaid: bool) -> PassOption | None:
+    prepaid_ok = ref <= date.fromisoformat(p["prepaid_valid_until"])
+    postpaid_ok = has_postpaid and ref <= date.fromisoformat(p["postpaid"]["valid_until"])
+    if not (prepaid_ok or postpaid_ok):
+        return None
+    price = p["variants"][0]["price"]                     # transit-only 기준
+    if pattern.spend_only:
+        uncovered = 0
+        warns = ["수단 구성을 알 수 없어 서울권 커버 여부를 확인하지 못했습니다"]
+    else:
+        uncovered = sum(s.fare_per_ride * s.monthly_rides for s in pattern.segments
+                        if s.mode in p["excluded_modes"])
+        warns = []
+    net = price + uncovered
+    rebate = pattern.total_spend - net                    # '패스 없음' 대비 절감액 개념
+    warns_t = tuple(warns)
+    note = "후불형 (기존 보유자, 8/31까지)" if (not prepaid_ok and postpaid_ok) else ""
+    if ref.strftime("%Y-%m") == "2026-08":
+        warns_t += ("월 전체 사용 불가 — 선불 8/29·후불 8/31까지. 9월부터 모두의카드 전환 필요",)
+    if uncovered:
+        warns_t += (f"신분당선·GTX·광역버스 {uncovered:,}원은 별도 부담 (기동카 미적용)",)
+    # rebate 음수 = 이용량이 적어 정액권이 종량제보다 손해라는 뜻 (그대로 노출, 랭킹은 net_cost 기준)
+    return PassOption(p["id"], p["name"], "기후동행카드 30일권", rebate,
+                      net, note, warns_t, _srcs(p))
+
+def calc_dongbaek(p: dict, pattern: Pattern) -> PassOption:
+    rebate = max(0, pattern.total_spend - p["threshold"])
+    return PassOption(p["id"], p["name"], "동백패스(4.5만 초과 환급)", rebate,
+                      pattern.total_spend - rebate,
+                      note="K-패스 동시 가입 시 유리한 금액 자동 적용",
+                      warnings=("부산 수단·실물 동백전 카드 결제만 인정",), sources=_srcs(p))
+
+def calc_eung(p: dict, pattern: Pattern) -> PassOption:
+    covered = min(pattern.total_spend, p["monthly_cap"])
+    net = p["monthly_price"] + max(0, pattern.total_spend - p["monthly_cap"])
+    return PassOption(p["id"], p["name"], "이응패스(월 2만원)", covered - p["monthly_price"], net,
+                      note="월 5만원 한도, 세종권 6개 시 적용", sources=_srcs(p))
+
+def compare_all(pattern: Pattern, ref: date, age: int, residence: str,
+                income_level: str, children_count: int, is_first_month: bool,
+                free_ride_status: str, has_postpaid_climate_card: bool) -> list[PassOption]:
+    from passfit.normalize import resolve_region
+    from passfit.data_loader import load_passes
+    data = load_passes()
+    passes = {p["id"]: p for p in data["passes"]}
+    region = resolve_region(residence)
+    opts: list[PassOption] = []
+
+    modu = passes["modu-card"]
+    best = calc_modu_best(modu, pattern, age, region.sido, income_level,
+                          children_count, ref, is_first_month, region.region_class)
+    note = best.note
+    if region.sido == "서울":                              # plus merge_with_alias
+        note = (note + " · 서울에서는 '기후동행카드 플러스'로 이용").strip(" ·")
+    opts.append(PassOption("modu-card", modu["name"], best.label, best.rebate,
+                           best.net_cost, note, best.warnings, _srcs(modu)))
+
+    if region.sido in (None, "서울", "경기", "인천"):       # 수도권/미상만 기동카 후보
+        legacy = calc_climate_legacy(passes["climate-card-legacy"], pattern, ref,
+                                     has_postpaid_climate_card)
+        if legacy:
+            opts.append(legacy)
+    if region.sido == "부산":
+        opts.append(calc_dongbaek(passes["dongbaek-pass"], pattern))
+    if region.sido == "세종":
+        opts.append(calc_eung(passes["eung-pass"], pattern))
+    return sorted(opts, key=lambda o: o.net_cost)
+
+def collect_notices(ref: date, sido: str | None) -> list[str]:
+    from passfit.data_loader import load_passes
+    data = load_passes()
+    notices = []
+    legacy = next(p for p in data["passes"] if p["id"] == "climate-card-legacy")
+    if ref > date.fromisoformat(legacy["prepaid_valid_until"]) and sido in (None, "서울", "경기", "인천"):
+        notices.append(f"기후동행카드는 종료되었습니다. {legacy['transition_note']}")
+    if ref <= date(2026, 9, 30):
+        notices.append("한시 혜택(반값 기준금액·시차시간 +30%p)은 9월 이용분까지 — 10월부터 표준 원복 예정")
+    for fr in data["free_ride_info"]:
+        if fr["region"] in (sido, "전국"):
+            notices.append(f"[무임 안내] {fr['rule']}")
+    return notices
