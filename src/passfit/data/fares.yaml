@@ -1,0 +1,12 @@
+# 2025-06-28 인상 후 2026-07 현행. 출처: 서울시 traffic_price, 신분당선·GTX-A 공식 운임표
+last_verified: "2026-07-06"
+default_fares:
+  subway: 1550
+  city_bus: 1500
+  village_bus: 1200
+  metropolitan_bus: 3000
+  gtx: 3200
+  shinbundang: 2550          # 기본 1550 + 강남~정자 별도운임 1000 (대표값)
+  other: 1550
+flat_standard_fare_limit: 3000   # 일반형 적용 기준: 1회 총요금 3,000원 미만
+flat_standard_excluded_modes: [metropolitan_bus, gtx, shinbundang]

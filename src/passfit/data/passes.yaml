@@ -1,0 +1,117 @@
+last_verified: "2026-07-06"
+passes:
+  - id: modu-card
+    name: 모두의카드 (구 K-패스)
+    operator: 국토교통부 대광위
+    type: hybrid
+    eligibility: { age_min: 19, residency: 전국 }
+    rebate_rates:
+      general: 0.20
+      youth: 0.30
+      senior: 0.30
+      multi_child_2: 0.30
+      multi_child_3: 0.50
+      low_income: 0.533
+    youth_age: { min: 19, max: 34 }
+    senior_age_min: 65
+    flat_thresholds:             # [일반형, 플러스형]
+      수도권:      { general: [62000, 100000], youth: [55000, 90000], senior: [55000, 90000], multi_child_2: [55000, 90000], multi_child_3: [45000, 80000], low_income: [45000, 80000] }
+      일반지방권:  { general: [55000, 95000],  youth: [50000, 85000], senior: [50000, 85000], multi_child_2: [50000, 85000], multi_child_3: [40000, 75000], low_income: [40000, 75000] }
+      우대지원지역: { general: [50000, 90000],  youth: [45000, 80000], senior: [45000, 80000], multi_child_2: [45000, 80000], multi_child_3: [35000, 70000], low_income: [35000, 70000] }
+      특별지원지역: { general: [45000, 85000],  youth: [40000, 75000], senior: [40000, 75000], multi_child_2: [40000, 75000], multi_child_3: [30000, 65000], low_income: [30000, 65000] }
+    temporary_benefits:
+      - id: half-price
+        valid_from: "2026-04-01"
+        valid_until: "2026-09-30"
+        applies_to: flat_only
+        thresholds:
+          수도권:      { general: [30000, 50000], youth: [25000, 45000], senior: [25000, 45000], multi_child_2: [25000, 45000], multi_child_3: [22000, 40000], low_income: [22000, 40000] }
+          일반지방권:  { general: [27000, 47000], youth: [23000, 42000], senior: [23000, 42000], multi_child_2: [23000, 42000], multi_child_3: [20000, 37000], low_income: [20000, 37000] }
+          우대지원지역: { general: [25000, 45000], youth: [21000, 40000], senior: [21000, 40000], multi_child_2: [21000, 40000], multi_child_3: [17000, 35000], low_income: [17000, 35000] }
+          특별지원지역: { general: [22000, 42000], youth: [20000, 37000], senior: [20000, 37000], multi_child_2: [20000, 37000], multi_child_3: [15000, 32000], low_income: [15000, 32000] }
+      - id: offpeak-bonus
+        valid_from: "2026-04-01"
+        valid_until: "2026-09-30"
+        applies_to: rebate_only
+        bonus_rate: 0.30
+        windows: ["05:30-06:30", "09:00-10:00", "16:00-17:00", "19:00-20:00"]
+    conditions:
+      min_rides_month: 15
+      first_month_min_rides_exempt: true
+    regional_overrides:          # 거주 시도별 상위 혜택 (환급률/연령 확대)
+      경기: { youth_age_max: 39 }
+      인천: { youth_age_max: 39 }
+      광주: { youth_age_max: 39, rate_overrides: { senior: 0.50, low_income: 0.64 } }
+      울산: { youth_age_max: 39, rate_overrides: { low_income: 1.00 } }
+      경남: { youth_age_max: 39, rate_overrides: { low_income: 1.00 } }
+    excluded: [KTX, SRT, 시외버스, 고속버스, 공항버스]
+    sources:
+      - { url: "https://korea-pass.kr/info/use_accm.do", verified: "2026-07-06" }
+      - { url: "https://korea.kr/news/policyNewsView.do?newsId=148963193", verified: "2026-07-06" }
+
+  - id: climate-card-legacy
+    name: 기후동행카드
+    operator: 서울시
+    status: ending
+    type: flat_pass
+    eligibility: { residency: 서울이용자 }    # 거주지 무관, 서울권 이용 전제
+    variants:
+      - { id: transit-only, price: 62000, duration_days: 30 }
+      - { id: transit-bike, price: 65000, duration_days: 30 }
+    prepaid_charge_until: "2026-07-31"
+    prepaid_valid_until: "2026-08-29"
+    postpaid:
+      valid_until: "2026-08-31"
+      requires_existing_card: true
+      default_compare: false
+    included_scope: 서울 지하철·서울면허 시내/마을버스 (관외 하차 별도 징수)
+    excluded_modes: [metropolitan_bus, gtx, shinbundang]
+    short_term_ticket: { status: active, compare: false, note: "관광객/단기 안내 전용" }
+    transition_note: "8/29(선불)·8/31(후불) 종료 — 9월부터는 모두의카드 계열로 전환 필요 (기존 회원정보 이관 불가, K-패스 카드 신규 발급)"
+    sources:
+      - { url: "https://news.seoul.go.kr/traffic/archives/517640", verified: "2026-07-06" }
+
+  - id: climate-card-plus
+    name: 기후동행카드 플러스
+    operator: 서울시+대광위
+    status: display_only
+    calculation_alias_of: modu-card
+    eligibility: { residency: 서울 }
+    ranking_policy: merge_with_alias
+    simulate_policy: alias_to_base
+    details_policy: show_alias_plus_base
+    list_policy: show_as_alias
+    pending_benefits:
+      - "따릉이 3,000원"
+      - "청년 35~39세 확대"
+    sources:
+      - { url: "https://www.seoul.go.kr/news/news_report.do?nttNo=459855", verified: "2026-07-06" }
+
+  - id: dongbaek-pass
+    name: 부산 동백패스
+    operator: 부산시
+    type: threshold_rebate       # 월 임계 초과분 환급 (부산 수단 한정)
+    eligibility: { residency: 부산, age_min: 18 }
+    threshold: 45000
+    scope_note: "부산 시내·마을버스(2000번 급행 제외), 도시철도 1~4호선, 부산김해경전철, 동해선. 실물 동백전 교통카드만 인정(모바일 결제 제외)"
+    note: "K-패스 동시 가입 시 동백패스·모두의카드 중 유리한 금액 자동 지급 (2026.4 상한 폐지)"
+    sources:
+      - { url: "https://www.busan.go.kr/depart/dongbaegpass001", verified: "2026-07-06" }
+
+  - id: eung-pass
+    name: 세종 이응패스
+    operator: 세종시
+    type: prepaid_capped         # 월 2만원 구입 → 5만원 한도 환급
+    eligibility: { residency: 세종, age_min: 19 }
+    monthly_price: 20000
+    monthly_cap: 50000
+    scope_note: "세종·대전·청주·공주·천안·계룡 시내/마을/광역/BRT/DRT + 대전지하철"
+    note: "청소년(13~18)·70세+·장애인은 이용료 면제. K-패스 중복 시 5만원 초과분만 K-패스 적립"
+    sources:
+      - { url: "https://www.sejong.go.kr/life/sub02_0908.do", verified: "2026-07-06" }
+
+free_ride_info:                  # 무임 안내용 (계산 아님)
+  - { region: 대전, rule: "70세+ 시내버스 무임 (전용카드)" }
+  - { region: 대구, rule: "버스 72세+/도시철도 68세+ 무임 (통합무임카드)" }
+  - { region: 울산, rule: "70세+ 시내버스 무료 (2026.2~, 전용카드, 월 60회)" }
+  - { region: 전국, rule: "65세+ 도시철도 법정 무임. 무임카드 이용분은 결제액 0원이라 패스 환급 대상 아님 (구조상 도출)" }
