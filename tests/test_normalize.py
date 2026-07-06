@@ -21,3 +21,10 @@ def test_unknown_region_falls_back():
 def test_confidence_reported():
     assert resolve_region("판교").confidence == "alias"
     assert resolve_region("서울").confidence == "exact"
+
+
+def test_compound_city_name_disambiguation():
+    # 경기도 광주시(경기) vs 광주광역시(광주) — 앞선 위치 매칭이 이김. YAML 순서 바뀌어도 유지되어야 함
+    assert resolve_region("경기도 광주시").sido == "경기"
+    assert resolve_region("광주광역시").sido == "광주"
+    assert resolve_region("광주").sido == "광주"
