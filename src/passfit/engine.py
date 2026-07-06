@@ -9,6 +9,12 @@ class Segment:
     monthly_rides: int
     offpeak_rides: int = 0
 
+    def __post_init__(self):
+        # offpeak는 전체 승차의 부분집합 — [0, monthly_rides]로 클램프
+        clamped = max(0, min(self.offpeak_rides, self.monthly_rides))
+        if clamped != self.offpeak_rides:
+            object.__setattr__(self, "offpeak_rides", clamped)
+
 @dataclass(frozen=True)
 class Pattern:
     segments: tuple[Segment, ...]
@@ -85,5 +91,5 @@ def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: floa
     rebate = normal_spend * rate + offpeak_spend * (rate + (bonus["bonus_rate"] if bonus else 0))
     rebate = round(rebate)
     note = "시차시간 승차분 +30%p 적용 (9월 이용분까지)" if bonus and offpeak_spend else ""
-    warnings = ("탑승 횟수를 알 수 없어 15회 요건을 확인하지 못했습니다",) if rides is None else ()
+    warnings = ("탑승 횟수를 알 수 없어 15회 요건을 확인하지 못했습니다 (월 15회 이상 이용 가정 추정치)",) if rides is None else ()
     return CalcResult("모두의카드 기본형(정률)", rebate, spend - rebate, note, warnings)
