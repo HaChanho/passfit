@@ -1,5 +1,6 @@
+from datetime import date as _date
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from passfit.engine import Pattern, Segment
 
 Mode = Literal["subway", "city_bus", "village_bus", "metropolitan_bus",
@@ -21,15 +22,36 @@ class CommuteInput(BaseModel):
     rides: list[RideSegment] | None = None
     offpeak_rides: int = Field(0, ge=0)
     age: int = Field(ge=6, le=120)
-    residence: str
+    residence: str = Field(min_length=1)
     income_level: Literal["general", "low_income"] = "general"
-    children_count: int = Field(0, ge=0)
+    children_count: int = Field(0, ge=0, le=10)
     is_first_month: bool = False
     free_ride_status: Literal["none", "eligible", "uses_free_ride_card"] = "none"
     has_postpaid_climate_card: bool = False
     usage_month: str | None = Field(None, pattern=r"^\d{4}-\d{2}$")
     as_of_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     detail: Literal["concise", "detailed"] = "concise"
+
+    @field_validator("as_of_date")
+    @classmethod
+    def _valid_as_of_date(cls, v):
+        if v is not None:
+            try:
+                _date.fromisoformat(v)
+            except ValueError:
+                raise ValueError(f"as_of_date '{v}'는 실제 날짜가 아닙니다 (YYYY-MM-DD)")
+        return v
+
+    @field_validator("usage_month")
+    @classmethod
+    def _valid_usage_month(cls, v):
+        if v is not None:
+            try:
+                y, m = v.split("-")
+                _date(int(y), int(m), 1)
+            except ValueError:
+                raise ValueError(f"usage_month '{v}'는 실제 연월이 아닙니다 (YYYY-MM)")
+        return v
 
     @model_validator(mode="after")
     def _require_pattern(self):
