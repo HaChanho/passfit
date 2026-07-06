@@ -22,3 +22,9 @@ def test_regions_and_fares():
     fares = load_fares()
     assert fares["default_fares"]["subway"] == 1550
     assert "gtx" in fares["flat_standard_excluded_modes"]
+
+def test_loaded_data_is_isolated_between_calls():
+    a = load_passes()
+    a["passes"].append("MUTATED")
+    b = load_passes()
+    assert "MUTATED" not in b["passes"]
