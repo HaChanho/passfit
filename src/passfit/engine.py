@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 from passfit.dates import in_window
+from passfit.data_loader import load_fares
 
 @dataclass(frozen=True)
 class Segment:
@@ -95,3 +96,47 @@ def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: floa
     note = "시차시간 승차분 +30%p 적용 (9월 이용분까지)" if bonus and offpeak_spend else ""
     warnings = ("탑승 횟수를 알 수 없어 15회 요건을 확인하지 못했습니다 (월 15회 이상 이용 가정 추정치)",) if rides is None else ()
     return CalcResult(label, rebate, spend - rebate, note, warnings)
+
+def _flat_eligible_spend(pattern: Pattern, variant: str) -> tuple[int, int]:
+    """(커버 대상 spend, 제외 spend). plus는 전 수단, standard는 3,000원 미만 수단만."""
+    if pattern.spend_only:
+        return pattern.total_spend, 0
+    if variant == "plus":
+        return pattern.total_spend, 0
+    fares = load_fares()
+    covered = excluded = 0
+    for s in pattern.segments:
+        if s.mode in fares["flat_standard_excluded_modes"] or s.fare_per_ride >= fares["flat_standard_fare_limit"]:
+            excluded += s.fare_per_ride * s.monthly_rides
+        else:
+            covered += s.fare_per_ride * s.monthly_rides
+    return covered, excluded
+
+def calc_modu_flat(pass_def: dict, pattern: Pattern, category: str, region_class: str,
+                   ref: date, variant: str) -> CalcResult:
+    idx = 0 if variant == "standard" else 1
+    half = _active_benefit(pass_def, "half-price", ref)
+    table = half["thresholds"] if half else pass_def["flat_thresholds"]
+    threshold = table[region_class][category][idx]
+    covered, excluded = _flat_eligible_spend(pattern, variant)
+    rebate = max(0, covered - threshold)
+    name = "일반형" if variant == "standard" else "플러스형"
+    note = f"기준금액 {threshold:,}원" + (" (한시 반값, 9월 이용분까지)" if half else "")
+    warnings: list[str] = []
+    if variant == "standard" and excluded:
+        warnings.append(f"광역버스·GTX·신분당선 등 {excluded:,}원은 일반형 미적용 (플러스형 필요)")
+    if pattern.spend_only:
+        warnings.append("수단 구성을 알 수 없어 일반형/플러스형 분기가 정확하지 않을 수 있습니다")
+    return CalcResult(f"모두의카드 정액형({name})", rebate,
+                      pattern.total_spend - rebate, note, tuple(warnings))
+
+def calc_modu_best(pass_def: dict, pattern: Pattern, age: int, sido: str | None,
+                   income_level: str, children_count: int, ref: date,
+                   is_first_month: bool, region_class: str) -> CalcResult:
+    category, rate = determine_category(pass_def, age, sido, income_level, children_count)
+    options = [
+        calc_modu_rebate(pass_def, pattern, category, rate, ref, is_first_month),
+        calc_modu_flat(pass_def, pattern, category, region_class, ref, "standard"),
+        calc_modu_flat(pass_def, pattern, category, region_class, ref, "plus"),
+    ]
+    return max(options, key=lambda r: r.rebate)   # 제도 자체가 최대 환급 자동 적용
