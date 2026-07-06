@@ -2,8 +2,8 @@
 name = "passfit"
 version = "0.1.0"
 description = "PassFit - 2026 Korean transit pass navigator MCP server"
-requires-python = ">=3.12"
-dependencies = ["fastmcp>=3.0", "pydantic>=2.7", "pyyaml>=6.0"]
+requires-python = ">=3.12,<3.14"
+dependencies = ["fastmcp>=3.4,<4", "pydantic>=2.13,<3", "pyyaml>=6.0,<7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
@@ -17,4 +17,3 @@ packages = ["src/passfit"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["src"]
