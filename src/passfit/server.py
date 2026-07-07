@@ -25,6 +25,8 @@ def _today() -> date:
 
 def _region_note(residence: str) -> str:
     r = resolve_region(residence)
+    if not residence.strip():
+        return "거주지가 입력되지 않아 전국 기준(모두의카드)으로만 계산했습니다."
     if r.confidence == "unknown":
         return f"거주지 '{residence}'를 해석하지 못해 전국 기준(모두의카드)으로만 계산했습니다."
     return f"거주지는 '{r.sido}'({r.region_class})으로 해석했습니다."
