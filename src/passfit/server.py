@@ -7,11 +7,12 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 from passfit.models import CommuteInput, RideSegment, to_pattern
-from passfit.engine import compare_all, collect_notices, calc_modu_best, determine_category
+from passfit.engine import (compare_all, collect_notices, calc_modu_best,
+                            determine_category, calc_modu_rebate, calc_modu_flat, Pattern, Segment)
 from passfit.normalize import resolve_region
 from passfit.dates import resolve_reference_date
 from passfit.data_loader import load_passes
-from passfit.render import render_comparison
+from passfit.render import render_comparison, render_pass_details
 
 mcp = FastMCP("PassFit")
 RO = {"readOnlyHint": True, "destructiveHint": False,
@@ -145,16 +146,6 @@ def list_transit_passes(region: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def _fmt(v):
-    if isinstance(v, bool):
-        return "예" if v else "아니오"
-    if isinstance(v, dict):
-        return ", ".join(f"{k}: {_fmt(x)}" for k, x in v.items())
-    if isinstance(v, list):
-        return ", ".join(_fmt(x) for x in v)
-    return str(v)
-
-
 @mcp.tool(annotations={"title": "패스 상세", **RO})
 def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
                                       "climate-card-plus", "dongbaek-pass",
@@ -166,20 +157,10 @@ def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
     list_transit_passes."""
     data = load_passes()
     p = next(x for x in data["passes"] if x["id"] == pass_id)
-    lines = [f"## {p['name']}"]
-    if p.get("details_policy") == "show_alias_plus_base":     # plus 정책
+    base = None
+    if p.get("details_policy") == "show_alias_plus_base":
         base = next(x for x in data["passes"] if x["id"] == p["calculation_alias_of"])
-        lines.append(f"모두의카드 기반 서울 전환 상품 — 계산·혜택은 '{base['name']}'과 동일.")
-        lines.append("예정 혜택(미확정, 계산 미반영): " + ", ".join(p["pending_benefits"]))
-        p = base
-        lines.append(f"\n### 기반 제도: {p['name']}")
-    for key in ("eligibility", "rebate_rates", "conditions", "threshold",
-                "monthly_price", "monthly_cap", "scope_note", "note",
-                "transition_note", "included_scope"):
-        if key in p:
-            lines.append(f"- **{key}**: {_fmt(p[key])}")
-    lines.append("- **출처**: " + ", ".join(s["url"] for s in p["sources"]))
-    return "\n".join(lines)
+    return render_pass_details(p, base)
 
 
 @mcp.tool(annotations={"title": "절약 시뮬레이션", **RO})
@@ -280,6 +261,157 @@ def check_pass_eligibility(age: int, residence: str,
             if fr["region"] in (region.sido, "전국"):
                 lines.append(f"- [무임] {fr['rule']}")
         lines.append("- 무임카드 이용분은 환급 대상이 아니므로, 무임 vs 유임+환급을 비교해 선택하세요.")
+    return "\n".join(lines)
+
+
+@mcp.tool(annotations={"title": "손익분기 승차 횟수", **RO})
+def find_breakeven_rides(
+    fare_per_ride: int,
+    age: int = 30,
+    residence: str = "",
+    income_level: Literal["general", "low_income"] = "general",
+    children_count: int = 0,
+    as_of_date: str | None = None,
+) -> str:
+    """Find the breakeven monthly_rides count for Korean transit passes,
+    from PassFit(패스핏). 모두의카드에서 (1) 15회 최소요건을 넘는 지점,
+    (2) 정률형→정액형 전환점, (3) 일반형→플러스형 전환점을 자동 탐색해
+    자연어로 요약. Use when the user asks '몇 회부터 이득?', '손익분기점',
+    '주 몇 일 타면 정액이 유리해요?'. fare_per_ride는 1회 요금 (원)."""
+    if fare_per_ride <= 0:
+        raise ToolError("fare_per_ride는 양수여야 합니다.")
+    modu = next(p for p in load_passes()["passes"] if p["id"] == "modu-card")
+    ref = resolve_reference_date(None, as_of_date, _today())
+    region = resolve_region(residence)
+    category, rate = determine_category(modu, age, region.sido, income_level, children_count)
+
+    def _best_label(rides: int) -> tuple[str, int]:
+        pattern = Pattern((Segment("subway", fare_per_ride, rides, 0),))
+        r_rebate = calc_modu_rebate(modu, pattern, category, rate, ref, False)
+        r_std = calc_modu_flat(modu, pattern, category, region.region_class, ref, "standard")
+        r_plus = calc_modu_flat(modu, pattern, category, region.region_class, ref, "plus")
+        options = [("정률형", r_rebate.rebate), ("정액형(일반형)", r_std.rebate),
+                   ("정액형(플러스형)", r_plus.rebate)]
+        best = max(options, key=lambda x: x[1])
+        return best
+
+    # 15회 게이트: 정률/정액 모두 15회 미만이면 rebate=0
+    entry_line = f"**가입 임계**: 월 15회 미만은 환급 대상이 아닙니다 (가입 첫 달만 예외)."
+
+    # 스윕: 15회부터 120회까지 각 지점의 승자 라벨을 기록
+    prev_label = None
+    transitions: list[tuple[int, str, int, str, int]] = []  # (rides, from_label, from_rebate, to_label, to_rebate)
+    per_rides: list[tuple[int, str, int]] = []
+    for rides in range(15, 121):
+        label, rebate = _best_label(rides)
+        per_rides.append((rides, label, rebate))
+        if prev_label is not None and label != prev_label:
+            prev_r = per_rides[-2][2]
+            transitions.append((rides, prev_label, prev_r, label, rebate))
+        prev_label = label
+
+    # 손익분기: 정률형에서 처음으로 환급이 fare_per_ride를 넘는 지점 (한 번 더 타는 값어치)
+    # → 이 계산은 심리적 손익분기 (환급 > 1회 요금)
+    psychological_be = None
+    for rides, label, rebate in per_rides:
+        if rebate >= fare_per_ride:
+            psychological_be = (rides, label, rebate)
+            break
+
+    lines = [
+        f"**{fare_per_ride:,}원/회 이용자의 모두의카드 손익분기 분석**",
+        "",
+        f"거주지: {region.sido or '전국'} ({region.region_class}), "
+        f"유형: {CAT_KO[category]} (환급률 {rate:.1%})",
+        "",
+        entry_line,
+    ]
+    if psychological_be:
+        r, lb, rb = psychological_be
+        lines.append(f"**본전 회복**: 월 {r}회부터 월 환급 {rb:,}원이 1회 요금({fare_per_ride:,}원)을 넘습니다 "
+                     f"— 이 시점에는 이미 {lb}이 최적입니다.")
+    if transitions:
+        lines.append("")
+        lines.append("**상품 전환 지점**:")
+        for r, from_lb, from_r, to_lb, to_r in transitions:
+            lines.append(f"  - 월 {r}회 도달 시 **{from_lb}({from_r:,}원)** → **{to_lb}({to_r:,}원)** 전환")
+    else:
+        lines.append("")
+        lines.append(f"이 요금대(1회 {fare_per_ride:,}원)에서는 정률형이 계속 최적입니다.")
+
+    lines += ["", "**참고 표 (주요 지점)**",
+              "| 승차 횟수 | 최적 상품 | 월 환급 |", "|---:|---|---:|"]
+    for r in [15, 20, 30, 44, 60, 88, 120]:
+        entry = next(x for x in per_rides if x[0] == r)
+        lines.append(f"| {r}회 | {entry[1]} | {entry[2]:,}원 |")
+
+    if ref <= date(2026, 9, 30):
+        lines.append("")
+        lines.append("_※ 한시 반값(9월 이용분까지) 기준. 10월 이후에는 정액형 이득이 절반가량 줄어듭니다._")
+
+    return "\n".join(lines)
+
+
+@mcp.tool(annotations={"title": "무임 vs 유임+환급 비교", **RO})
+def simulate_free_ride_choice(
+    monthly_rides: int,
+    fare_per_ride: int,
+    age: int,
+    residence: str,
+    income_level: Literal["general", "low_income"] = "general",
+    as_of_date: str | None = None,
+) -> str:
+    """Compare '무임카드 이용(결제 0원)' vs '유임 결제 + 모두의카드 환급'
+    for eligible free-ride users(65+·70+ etc.), from PassFit(패스핏).
+    두 시나리오의 실제 월 부담을 나란히 계산해 어느 쪽이 유리한지 알려줌.
+    Use when user is 65+ or asks about 무임/무료 교통·경로우대."""
+    if monthly_rides <= 0 or fare_per_ride <= 0:
+        raise ToolError("monthly_rides·fare_per_ride는 양수여야 합니다.")
+    modu = next(p for p in load_passes()["passes"] if p["id"] == "modu-card")
+    data = load_passes()
+    ref = resolve_reference_date(None, as_of_date, _today())
+    region = resolve_region(residence)
+
+    total_spend = monthly_rides * fare_per_ride
+
+    # 시나리오 A: 무임카드
+    scenario_a_cost = 0
+
+    # 시나리오 B: 유임 결제 + 모두의카드 환급
+    pattern = Pattern((Segment("subway", fare_per_ride, monthly_rides, 0),))
+    b = calc_modu_best(modu, pattern, age, region.sido, income_level, 0,
+                       ref, False, region.region_class)
+    scenario_b_cost = b.net_cost
+
+    winner = "A(무임카드)" if scenario_a_cost < scenario_b_cost else "B(유임+환급)"
+    delta = abs(scenario_a_cost - scenario_b_cost)
+
+    lines = [
+        f"**만 {age}세 무임 대상 사용자 — 두 시나리오 비교**",
+        "",
+        f"거주지: {region.sido or '전국'}, 월 이용: {monthly_rides}회 × {fare_per_ride:,}원 "
+        f"= 총 {total_spend:,}원",
+        "",
+        "| 시나리오 | 월 결제 | 월 환급 | 월 실질 부담 |",
+        "|---|---:|---:|---:|",
+        f"| A. 무임카드 이용 | 0원 | 0원 | **0원** |",
+        f"| B. 유임 결제 + {b.label} | {total_spend:,}원 | {b.rebate:,}원 | **{scenario_b_cost:,}원** |",
+        "",
+        f"**결론: {winner}이 월 {delta:,}원 더 유리합니다.**",
+    ]
+
+    # 지역별 무임 규정 안내
+    free_notes = [fr for fr in data["free_ride_info"]
+                  if fr["region"] in (region.sido, "전국")]
+    if free_notes:
+        lines.append("")
+        lines.append("**무임 규정 (지역별)**:")
+        for fr in free_notes:
+            lines.append(f"  - [{fr['region']}] {fr['rule']}")
+
+    lines.append("")
+    lines.append("**주의**: 무임카드는 승차 자체가 결제 0원이라 환급 대상이 아닙니다. "
+                 "도시철도만 무임인 지역에서는 버스 승차분은 여전히 유임+환급이 유리할 수 있습니다.")
     return "\n".join(lines)
 
 
