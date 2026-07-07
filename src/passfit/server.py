@@ -284,5 +284,9 @@ def check_pass_eligibility(age: int, residence: str,
 
 
 if __name__ == "__main__":
+    # allowed_hosts=["*"]: 프록시 뒤 배포에서 upstream Host 헤더가 rewrite/변형되어도
+    # FastMCP의 host 검증이 421을 반환하지 않도록 허용. 게이트웨이(카카오 클라우드
+    # Envoy)가 도메인 인증·라우팅을 담당하므로 백엔드 host 검증은 중복 방어.
     mcp.run(transport="http", host="0.0.0.0",
-            port=int(os.environ.get("PORT", "8000")), stateless_http=True)
+            port=int(os.environ.get("PORT", "8000")),
+            stateless_http=True, allowed_hosts=["*"])
