@@ -285,4 +285,4 @@ def check_pass_eligibility(age: int, residence: str,
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0",
-            port=int(os.environ.get("PORT", "8080")), stateless_http=True)
+            port=int(os.environ.get("PORT", "8000")), stateless_http=True)

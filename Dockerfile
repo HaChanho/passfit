@@ -5,6 +5,6 @@ COPY requirements-prod.lock pyproject.toml README.md ./
 RUN pip install --no-cache-dir -r requirements-prod.lock
 COPY src ./src
 RUN pip install --no-cache-dir --no-deps .
-ENV PORT=8080
-EXPOSE 8080
+ENV PORT=8000
+EXPOSE 8000
 CMD ["python", "-m", "passfit.server"]
