@@ -33,6 +33,13 @@ def test_accepts_valid_dates():
     CommuteInput(age=30, residence="서울", monthly_spend=50000,
                  as_of_date="2026-08-30", usage_month="2026-08")
 
-def test_rejects_empty_residence():
-    with pytest.raises(ValidationError):
-        CommuteInput(age=30, residence="", monthly_spend=50000)
+def test_empty_residence_falls_back_to_nationwide():
+    # LLM이 거주지 정보 없을 때 residence를 생략/빈문자로 넘기는 UX 회복 —
+    # min_length=1 방어를 걷어내고 resolve_region이 unknown fallback 처리.
+    inp = CommuteInput(age=30, residence="", monthly_spend=50000)
+    assert inp.residence == ""
+
+def test_income_level_korean_alias():
+    # LLM이 한국어로 넘긴 '저소득' → enum 'low_income'으로 자동 매핑.
+    inp = CommuteInput(age=30, residence="서울", monthly_spend=50000, income_level="저소득")
+    assert inp.income_level == "low_income"

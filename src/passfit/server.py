@@ -6,7 +6,7 @@ from datetime import datetime
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
-from passfit.models import CommuteInput, RideSegment, to_pattern
+from passfit.models import CommuteInput, RideSegment, to_pattern, INCOME_LEVEL_ALIASES
 from passfit.engine import (compare_all, collect_notices, calc_modu_best,
                             determine_category, calc_modu_rebate, calc_modu_flat, Pattern, Segment)
 from passfit.normalize import resolve_region
@@ -94,8 +94,14 @@ def compare_passes_for_commute(
     real monthly cost, from PassFit(패스핏). Use when the user asks which transit
     pass/card saves money — e.g. '교통비 아끼는 법', 'K-패스랑 기후동행카드 뭐가 이득?',
     '월 교통비 12만원인데 아낄 방법?'. If the user only knows weekly commute days,
-    convert: 주 5일 왕복 ≈ monthly_rides 44. offpeak_rides = 출퇴근 시차시간
-    (05:30~06:30/09~10/16~17/19~20시) 승차 횟수 — 한시 환급 할증 대상."""
+    convert: 주 5일 왕복 ≈ monthly_rides 44. Use `rides` (list) when user mixes
+    multiple modes with different fares — e.g. '지하철 30회 + 광역버스 15회'
+    → rides=[{mode:subway, fare_per_ride:1550, monthly_rides:30}, {mode:metropolitan_bus,
+    fare_per_ride:3000, monthly_rides:15}]. offpeak_rides = 출퇴근 시차시간
+    (05:30~06:30/09~10/16~17/19~20시) 승차 횟수 — 한시 환급 할증 대상.
+    residence는 미상 시 생략 가능 (전국 기준). **income_level은 반드시 'general'
+    또는 'low_income'** — 사용자가 '저소득/저소득자/기초생활수급자/차상위'라고 하면
+    'low_income'으로 매핑해 넣으세요."""
     inp = _build_commute_input(
         monthly_rides, fare_per_ride, monthly_spend, rides, offpeak_rides,
         age, residence, income_level, children_count, is_first_month,
@@ -231,16 +237,22 @@ def simulate_pass_savings(
 
 
 @mcp.tool(annotations={"title": "자격 확인", **RO})
-def check_pass_eligibility(age: int, residence: str,
+def check_pass_eligibility(age: int, residence: str = "",
                            income_level: Literal["general", "low_income"] = "general",
                            children_count: int = 0, is_first_month: bool = False,
                            free_ride_status: Literal["none", "eligible",
                                                      "uses_free_ride_card"] = "none") -> str:
     """Check which Korean transit passes the user qualifies for(자격 확인·가입 가능
-    여부), with reasons, from PassFit(패스핏). Use when the user asks '자격 되나요',
-    'K-패스 가입 가능?', '나 신청할 수 있어?', '몇 살부터 돼?'. 모두의카드·부산
-    동백패스·세종 이응패스의 자격을 확인합니다(기후동행카드는 이용 가능 여부라
-    compare에서 다룸)."""
+    여부·환급률 조회), with reasons, from PassFit(패스핏). Use when the user asks
+    '자격 되나요', 'K-패스 가입 가능?', '나 신청할 수 있어?', '몇 살부터 돼?',
+    '내 환급률이 얼마?'. 모두의카드·부산 동백패스·세종 이응패스의 자격을 확인합니다
+    (기후동행카드는 이용 가능 여부라 compare에서 다룸). residence는 미상 시 생략 가능.
+    **income_level은 반드시 'general' 또는 'low_income'** — 사용자가 '저소득/저소득자/
+    기초생활수급자/차상위'라고 하면 'low_income'으로 매핑해 넣으세요."""
+    # income_level 한국어 alias → enum 매핑 (LLM이 '저소득'을 그대로 넘기는 케이스)
+    income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)
+    if income_level not in ("general", "low_income"):
+        raise ToolError(f"income_level은 'general' 또는 'low_income'이어야 합니다 (받음: '{income_level}').")
     data = load_passes()
     region = resolve_region(residence)
     modu = next(p for p in data["passes"] if p["id"] == "modu-card")
@@ -284,9 +296,13 @@ def find_breakeven_rides(
     (2) 정률형→정액형 전환점, (3) 일반형→플러스형 전환점을 자동 탐색해
     자연어로 요약. Use when the user asks '몇 번(회)부터 이득/유리?', '손익분기점',
     '주 몇 일 타면 정액이 유리?', '월 몇 번 타야 이득?', '언제부터 본전?'.
-    fare_per_ride는 1회 요금 (원)."""
+    fare_per_ride는 1회 요금 (원). **income_level은 'general' 또는 'low_income'만
+    허용** — '저소득/기초생활수급자/차상위' → 'low_income'."""
     if fare_per_ride <= 0:
         raise ToolError("fare_per_ride는 양수여야 합니다.")
+    income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)
+    if income_level not in ("general", "low_income"):
+        raise ToolError(f"income_level은 'general' 또는 'low_income'이어야 합니다 (받음: '{income_level}').")
     modu = next(p for p in load_passes()["passes"] if p["id"] == "modu-card")
     ref = resolve_reference_date(None, as_of_date, _today())
     region = resolve_region(residence)
@@ -372,9 +388,13 @@ def simulate_free_ride_choice(
     for eligible free-ride users(65+·70+ etc.), from PassFit(패스핏).
     두 시나리오의 실제 월 부담을 나란히 계산해 어느 쪽이 유리한지 알려줌.
     Use when user asks about 부모님·어르신·노인·경로우대 대중교통, 무임/무료 지하철·
-    버스, 65세·70세 이상 교통비, or user themself is 65+."""
+    버스, 65세·70세 이상 교통비, or user themself is 65+. **income_level은 'general'
+    또는 'low_income'** — '저소득' → 'low_income'."""
     if monthly_rides <= 0 or fare_per_ride <= 0:
         raise ToolError("monthly_rides·fare_per_ride는 양수여야 합니다.")
+    income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)
+    if income_level not in ("general", "low_income"):
+        raise ToolError(f"income_level은 'general' 또는 'low_income'이어야 합니다 (받음: '{income_level}').")
     modu = next(p for p in load_passes()["passes"] if p["id"] == "modu-card")
     data = load_passes()
     ref = resolve_reference_date(None, as_of_date, _today())

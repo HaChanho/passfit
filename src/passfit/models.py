@@ -6,6 +6,14 @@ from passfit.engine import Pattern, Segment
 Mode = Literal["subway", "city_bus", "village_bus", "metropolitan_bus",
                "gtx", "shinbundang", "other"]
 
+# LLM이 자연어로 넘길 가능성이 있는 한국어 alias → 서버 enum 매핑.
+# check_pass_eligibility·compare 등 여러 tool에서 공용 사용.
+INCOME_LEVEL_ALIASES = {
+    "저소득": "low_income", "저소득자": "low_income", "저소득층": "low_income",
+    "기초생활수급자": "low_income", "차상위": "low_income",
+    "일반": "general", "일반인": "general",
+}
+
 class RideSegment(BaseModel):
     mode: Mode = "subway"
     fare_per_ride: int = Field(gt=0)
@@ -22,7 +30,9 @@ class CommuteInput(BaseModel):
     rides: list[RideSegment] | None = None
     offpeak_rides: int = Field(0, ge=0)
     age: int = Field(ge=6, le=120)
-    residence: str = Field(min_length=1)
+    # residence는 미상이면 "" → "전국" 취급 (resolve_region이 unknown fallback 처리).
+    # LLM이 거주지 없이 호출하는 흔한 UX 케이스 회복.
+    residence: str = ""
     income_level: Literal["general", "low_income"] = "general"
     children_count: int = Field(0, ge=0, le=10)
     is_first_month: bool = False
@@ -31,6 +41,14 @@ class CommuteInput(BaseModel):
     usage_month: str | None = Field(None, pattern=r"^\d{4}-\d{2}$")
     as_of_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     detail: Literal["concise", "detailed"] = "concise"
+
+    @field_validator("income_level", mode="before")
+    @classmethod
+    def _income_level_alias(cls, v):
+        # LLM이 한글 '저소득' 등을 그대로 넘기면 enum 값으로 변환.
+        if isinstance(v, str) and v in INCOME_LEVEL_ALIASES:
+            return INCOME_LEVEL_ALIASES[v]
+        return v
 
     @field_validator("as_of_date")
     @classmethod
