@@ -99,7 +99,9 @@ def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: floa
     offpeak_spend = pattern.offpeak_spend if bonus else 0
     normal_spend = spend - offpeak_spend
     rebate = normal_spend * rate + offpeak_spend * (rate + (bonus["bonus_rate"] if bonus else 0))
-    rebate = round(rebate)
+    # 환급은 실지출을 초과할 수 없음 — 정률 100%(울산·경남 저소득)에 시차 +30%p가
+    # 얹혀 130%가 되어도 지출로 상한 (net_cost 음수 방지).
+    rebate = min(round(rebate), spend)
     note = "시차시간 승차분 +30%p 적용 (9월 이용분까지)" if bonus and offpeak_spend else ""
     warnings = ("탑승 횟수를 알 수 없어 15회 요건을 확인하지 못했습니다 (월 15회 이상 이용 가정 추정치)",) if rides is None else ()
     return CalcResult(label, rebate, spend - rebate, note, warnings)

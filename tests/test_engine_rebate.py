@@ -48,6 +48,15 @@ def test_offpeak_rides_clamped_to_total():
     assert r.net_cost >= 0                    # 음수 환급 불가
     assert r.rebate <= s.monthly_rides * s.fare_per_ride   # 환급 ≤ 지출
 
+def test_rebate_capped_at_spend_when_100pct_rate_plus_offpeak_bonus():
+    # 울산·경남 저소득은 정률 100%. 전 승차가 시차시간(+30%p)이면 130%가 되어
+    # 환급이 실지출을 초과(net 음수)해선 안 된다 — 환급 ≤ 지출 불변식.
+    r = calc_modu_rebate(MODU, pat(rides=44, offpeak=44), "low_income", 1.00,
+                         ref=date(2026, 7, 31), is_first_month=False)
+    spend = 44 * 1550
+    assert r.rebate <= spend        # 130% 미적용 — 지출 상한
+    assert r.net_cost >= 0          # 실질 부담이 음수일 수 없음
+
 def test_spend_only_warns_about_assumption():
     p = Pattern(segments=(), spend_only=True, spend_hint=100000)
     r = calc_modu_rebate(MODU, p, "general", 0.20, date(2026, 7, 31), False)
