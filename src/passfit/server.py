@@ -29,12 +29,15 @@ def _region_note(residence: str) -> str:
     if not residence.strip():
         return "거주지가 입력되지 않아 전국 기준(모두의카드)으로만 계산했습니다."
     if r.confidence == "unknown":
-        return f"거주지 '{residence}'를 해석하지 못해 전국 기준(모두의카드)으로만 계산했습니다."
+        return f"'{residence}' 지역을 해석하지 못해 전국 기준(모두의카드)으로만 계산했습니다."
     return f"거주지는 '{r.sido}'({r.region_class})으로 해석했습니다."
 
 
 CAT_KO = {"general": "일반", "youth": "청년", "senior": "어르신",
           "multi_child_2": "2자녀", "multi_child_3": "3자녀+", "low_income": "저소득"}
+
+TYPE_KO = {"hybrid": "정률·정액 환급형", "flat_pass": "정액 무제한권",
+           "threshold_rebate": "초과분 환급형", "prepaid_capped": "선불 정액형"}
 
 
 def _category_note(age: int, sido: str | None, income_level: str, children_count: int) -> str:
@@ -153,7 +156,7 @@ def list_transit_passes(region: str | None = None) -> str:
         if sido and res not in ("전국", sido, "서울이용자"):
             continue
         status = {"ending": "8월 종료 예정", "display_only": "운영 중"}.get(p.get("status"), "운영 중")
-        ptype = p.get("type", "hybrid(모두의카드 기반)")
+        ptype = TYPE_KO.get(p.get("type"), "정률·정액 환급형(모두의카드 기반)")
         lines.append(f"| {name} | {ptype} | {res} | {status} |")
     return "\n".join(lines)
 
@@ -308,8 +311,8 @@ def find_breakeven_rides(
 ) -> str:
     """Find the breakeven monthly_rides count for Korean transit passes,
     from PassFit(패스핏). 모두의카드에서 (1) 15회 최소요건을 넘는 지점,
-    (2) 정률형→정액형 전환점, (3) 일반형→플러스형 전환점을 자동 탐색해
-    자연어로 요약. Use when the user asks '몇 번(회)부터 이득/유리?', '손익분기점',
+    (2) 정률형→정액형 전환점을 자동 탐색하고, 해당 요금대에서 일반형·플러스형
+    중 어느 정액형이 최적인지 함께 요약. Use when the user asks '몇 번(회)부터 이득/유리?', '손익분기점',
     '주 몇 일 타면 정액이 유리?', '월 몇 번 타야 이득?', '언제부터 본전?'.
     fare_per_ride는 1회 요금 (원). **income_level은 'general' 또는 'low_income'만
     허용** — '저소득/기초생활수급자/차상위' → 'low_income'."""
@@ -401,7 +404,8 @@ def simulate_free_ride_choice(
 ) -> str:
     """Compare '무임카드 이용(결제 0원)' vs '유임 결제 + 모두의카드 환급'
     for eligible free-ride users(65+·70+ etc.), from PassFit(패스핏).
-    두 시나리오의 실제 월 부담을 나란히 계산해 어느 쪽이 유리한지 알려줌.
+    두 시나리오의 실제 월 부담을 나란히 계산해 어느 쪽이 유리한지 알려줌
+    (도시철도 무임 개시 연령은 지역별 상이 — 전국 65세·대구 68세, 미달 시 유임+환급만 안내).
     Use when user asks about 부모님·어르신·노인·경로우대 대중교통, 무임/무료 지하철·
     버스, 65세·70세 이상 교통비, or user themself is 65+. **income_level은 'general'
     또는 'low_income'** — '저소득' → 'low_income'."""

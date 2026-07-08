@@ -66,6 +66,33 @@ async def test_details_use_korean_benefit_labels_not_slugs():
         assert "반값" in text
 
 
+async def test_list_uses_korean_type_labels():
+    # 목록 '유형' 컬럼에 내부 영문 슬러그(flat_pass 등)가 노출되면 안 됨 (F6).
+    async with Client(mcp) as c:
+        l = await c.call_tool("list_transit_passes", {})
+        text = l.content[0].text
+        for slug in ["flat_pass", "threshold_rebate", "prepaid_capped", "hybrid"]:
+            assert slug not in text, slug
+        assert "정액 무제한권" in text
+
+
+async def test_details_show_low_income_rate_precisely():
+    # 상세 페이지 저소득 환급률은 53%가 아니라 53.3% (compare·eligibility와 일치, F2).
+    async with Client(mcp) as c:
+        d = await c.call_tool("get_pass_details", {"pass_id": "modu-card"})
+        assert "저소득 53.3%" in d.content[0].text
+
+
+async def test_unknown_region_note_has_clean_grammar():
+    # 미해석 지역 안내에 잘못된 조사('포항'를)가 없어야 (F4).
+    async with Client(mcp) as c:
+        r = await c.call_tool("compare_passes_for_commute", {
+            "monthly_rides": 44, "fare_per_ride": 1550, "age": 30, "residence": "포항"})
+        text = r.content[0].text
+        assert "'포항'를" not in text
+        assert "포항" in text and "전국 기준" in text
+
+
 async def test_eligibility_enforces_age_min():
     async with Client(mcp) as c:
         r = await c.call_tool("check_pass_eligibility",

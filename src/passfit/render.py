@@ -4,12 +4,11 @@ from passfit.engine import PassOption
 CAT_KO = {"general": "일반", "youth": "청년", "senior": "어르신",
           "multi_child_2": "2자녀", "multi_child_3": "3자녀+", "low_income": "저소득"}
 
-BENEFIT_KO = {"half-price": "반값 기준금액", "offpeak-bonus": "시차시간 할증"}
-
 
 def _rates_line(rates: dict) -> str:
     order = ["general", "youth", "senior", "multi_child_2", "multi_child_3", "low_income"]
-    return ", ".join(f"{CAT_KO[k]} {rates[k]:.0%}" for k in order if k in rates)
+    # 0.533 → "53.3%", 0.20 → "20%" (불필요한 소수점 제거, compare·eligibility와 일치)
+    return ", ".join(f"{CAT_KO[k]} {rates[k]*100:g}%" for k in order if k in rates)
 
 
 def _pending_line(pending: list[str]) -> str:
@@ -37,8 +36,6 @@ def render_pass_details(p: dict, base: dict | None = None) -> str:
             if parts:
                 override_lines.append(f"  - **{sido}**: {', '.join(parts)}")
         override_block = "\n".join(override_lines)
-        temp = ", ".join(f"{BENEFIT_KO.get(b['id'], b['id'])} ({b['valid_from']}~{b['valid_until']})"
-                          for b in p.get("temporary_benefits", []))
         return (
             f"## {p['name']}\n"
             f"전국 어디서나 신청 가능한 대중교통 환급 카드입니다 "
@@ -51,7 +48,8 @@ def render_pass_details(p: dict, base: dict | None = None) -> str:
             f"(일반형/플러스형 2단계, 지역 티어·유형별 상이).\n\n"
             f"**최소 이용**: 월 {c['min_rides_month']}회 "
             f"(가입 첫 달은 예외 — 첫 달 예외 적용).\n\n"
-            f"**한시 혜택**: {temp} — 정액 기준금액 반값 + 시차시간 승차 +30%p.\n\n"
+            f"**한시 혜택** (2026.4~9월 이용분): 정액 기준금액 반값 + "
+            f"시차시간 승차 정률환급 +30%p.\n\n"
             f"**지역 상향 혜택**:\n{override_block}\n\n"
             f"**미적용 수단**: {', '.join(p['excluded'])}\n\n"
             f"**출처**:\n{_sources(p)}"
