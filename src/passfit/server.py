@@ -8,7 +8,8 @@ from fastmcp.exceptions import ToolError
 from pydantic import ValidationError
 from passfit.models import CommuteInput, RideSegment, to_pattern, INCOME_LEVEL_ALIASES
 from passfit.engine import (compare_all, collect_notices, calc_modu_best,
-                            determine_category, calc_modu_rebate, calc_modu_flat, Pattern, Segment)
+                            determine_category, calc_modu_rebate, calc_modu_flat,
+                            calc_climate_legacy, Pattern, Segment)
 from passfit.normalize import resolve_region
 from passfit.dates import resolve_reference_date
 from passfit.data_loader import load_passes
@@ -228,14 +229,23 @@ def simulate_pass_savings(
                 f"- 연간 절약(현 조건 유지 가정): 약 {yearly:,}원\n"
                 + (f"- {r.note}\n" if r.note else "")
                 + "".join(f"- ⚠️ {w}\n" for w in r.warnings))
-    # legacy/dongbaek/eung은 compare_all 재사용 후 해당 항목만 발췌
-    opts = compare_all(pattern, ref, inp.age, inp.residence, inp.income_level,
-                       inp.children_count, inp.is_first_month,
-                       inp.has_postpaid_climate_card)   # free_ride_status는 caveat에서만 사용 (T7 리뷰)
-    m = next((o for o in opts if o.pass_id == p["id"]), None)
-    if m is None:
-        return (f"{note}{p['name']}는 현재 조건(거주지 {inp.residence}, 기준일 {ref})"
-                f"에서는 선택지가 아닙니다. compare_passes_for_commute로 대안을 확인하세요.")
+    if p["id"] == "climate-card-legacy":
+        # 기후동행카드는 거주지 무관(서울권 이용 전제)이라 거주지 게이트 없이 직접 계산.
+        m = calc_climate_legacy(p, pattern, ref, inp.has_postpaid_climate_card)
+        if m is None:
+            return (f"{note}기후동행카드는 {ref} 기준 이미 종료되었습니다 "
+                    f"(선불 8/29·후불 8/31까지). 모두의카드 계열로 전환하세요.")
+    else:
+        # 동백(부산)·이응(세종)은 진짜 거주지 전용 → compare_all 재사용(거주지 게이트 유지).
+        opts = compare_all(pattern, ref, inp.age, inp.residence, inp.income_level,
+                           inp.children_count, inp.is_first_month,
+                           inp.has_postpaid_climate_card)   # free_ride_status는 caveat에서만 사용 (T7 리뷰)
+        m = next((o for o in opts if o.pass_id == p["id"]), None)
+        if m is None:
+            resid = {"dongbaek-pass": "부산", "eung-pass": "세종"}.get(p["id"], "")
+            return (f"{note}{p['name']}는 {resid} 거주자 전용입니다. "
+                    f"거주지에 '{resid}' 입력 후 다시 시도하거나 "
+                    f"compare_passes_for_commute로 대안을 확인하세요.")
     return (f"{note}**{m.name} — {m.label}**\n- 월 환급: {m.rebate:,}원 / "
             f"월 실질 부담: {m.net_cost:,}원\n"
             + "".join(f"- ⚠️ {w}\n" for w in m.warnings))
@@ -407,31 +417,47 @@ def simulate_free_ride_choice(
 
     total_spend = monthly_rides * fare_per_ride
 
-    # 시나리오 A: 무임카드
-    scenario_a_cost = 0
-
     # 시나리오 B: 유임 결제 + 모두의카드 환급
     pattern = Pattern((Segment("subway", fare_per_ride, monthly_rides, 0),))
     b = calc_modu_best(modu, pattern, age, region.sido, income_level, 0,
                        ref, False, region.region_class)
     scenario_b_cost = b.net_cost
 
-    winner = "A(무임카드)" if scenario_a_cost < scenario_b_cost else "B(유임+환급)"
-    delta = abs(scenario_a_cost - scenario_b_cost)
+    # 시나리오 A: 무임카드(결제 0원)는 도시철도 무임 개시 연령을 충족해야 성립.
+    # 전국 65세 기본, 지역 상향(예: 대구 도시철도 68세+)은 free_ride_info에서 읽음.
+    subway_free_age = 65
+    for fr in data["free_ride_info"]:
+        if fr["region"] == region.sido and "subway_free_age" in fr:
+            subway_free_age = fr["subway_free_age"]
 
-    lines = [
-        f"**만 {age}세 무임 대상 사용자 — 두 시나리오 비교**",
-        "",
-        f"거주지: {region.sido or '전국'}, 월 이용: {monthly_rides}회 × {fare_per_ride:,}원 "
-        f"= 총 {total_spend:,}원",
-        "",
-        "| 시나리오 | 월 결제 | 월 환급 | 월 실질 부담 |",
-        "|---|---:|---:|---:|",
-        f"| A. 무임카드 이용 | 0원 | 0원 | **0원** |",
-        f"| B. 유임 결제 + {b.label} | {total_spend:,}원 | {b.rebate:,}원 | **{scenario_b_cost:,}원** |",
-        "",
-        f"**결론: {winner}이 월 {delta:,}원 더 유리합니다.**",
-    ]
+    header = (f"거주지: {region.sido or '전국'}, 월 이용: {monthly_rides}회 × "
+              f"{fare_per_ride:,}원 = 총 {total_spend:,}원")
+    table_head = ["| 시나리오 | 월 결제 | 월 환급 | 월 실질 부담 |", "|---|---:|---:|---:|"]
+    b_row = (f"| B. 유임 결제 + {b.label} | {total_spend:,}원 | {b.rebate:,}원 | "
+             f"**{scenario_b_cost:,}원** |")
+
+    if age >= subway_free_age:
+        scenario_a_cost = 0
+        winner = "A(무임카드)" if scenario_a_cost < scenario_b_cost else "B(유임+환급)"
+        delta = abs(scenario_a_cost - scenario_b_cost)
+        lines = [
+            f"**만 {age}세 무임 대상 사용자 — 두 시나리오 비교**", "", header, "",
+            *table_head,
+            f"| A. 무임카드 이용 | 0원 | 0원 | **0원** |",
+            b_row, "",
+            f"**결론: {winner}이 월 {delta:,}원 더 유리합니다.**",
+        ]
+    else:
+        # 국가 65세 이상이라 도구는 호출되나, 이 지역은 무임 개시 연령이 더 높음.
+        lines = [
+            f"**만 {age}세 — 아직 무임 대상 아님 ({region.sido} 도시철도 {subway_free_age}세+)**",
+            "", header, "",
+            *table_head,
+            f"| A. 무임카드 이용 | — | — | **{subway_free_age}세부터 가능** |",
+            b_row, "",
+            f"**결론: {region.sido} 도시철도 무임은 {subway_free_age}세부터라 만 {age}세는 "
+            f"아직 무임 대상이 아닙니다. 현재는 B(유임+환급, 실질 {scenario_b_cost:,}원)만 가능합니다.**",
+        ]
 
     # 지역별 무임 규정 안내
     free_notes = [fr for fr in data["free_ride_info"]

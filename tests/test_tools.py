@@ -111,6 +111,45 @@ async def test_free_ride_choice_shows_both_scenarios():
         assert "65세" in text or "무임" in text
 
 
+async def test_simulate_legacy_computes_without_residence():
+    # 기후동행카드는 거주지 무관(서울권 이용 전제) — residence 없이도 계산돼야 (M4).
+    async with Client(mcp) as c:
+        r = await c.call_tool("simulate_pass_savings", {
+            "pass_id": "climate-card-legacy", "monthly_rides": 50,
+            "fare_per_ride": 1550, "age": 30, "as_of_date": "2026-07-08"})
+        text = r.content[0].text
+        assert "선택지가 아닙니다" not in text
+        assert "기후동행카드" in text and "실질 부담" in text
+
+
+async def test_simulate_dongbaek_without_residence_explains_busan_only():
+    # 동백패스는 진짜 부산 거주자 전용 — 거부하되 이유를 명확히 (M4).
+    async with Client(mcp) as c:
+        r = await c.call_tool("simulate_pass_savings", {
+            "pass_id": "dongbaek-pass", "monthly_rides": 50, "fare_per_ride": 1550, "age": 30})
+        assert "부산 거주자 전용" in r.content[0].text
+
+
+async def test_free_ride_choice_respects_regional_subway_free_age():
+    # 대구 도시철도 무임은 68세+ — 66세는 아직 무임 대상 아님, 무임 승자로 단정 금지 (M5).
+    async with Client(mcp) as c:
+        r = await c.call_tool("simulate_free_ride_choice", {
+            "monthly_rides": 44, "fare_per_ride": 1550, "age": 66,
+            "residence": "대구", "as_of_date": "2026-07-08"})
+        text = r.content[0].text
+        assert "아직 무임 대상이 아닙니다" in text
+        assert "A(무임카드)이 월" not in text
+
+
+async def test_free_ride_choice_daegu_68_stays_eligible():
+    # 68세는 대구 도시철도 무임 대상 — 과도한 게이팅으로 막으면 안 됨 (M5 경계 가드).
+    async with Client(mcp) as c:
+        r = await c.call_tool("simulate_free_ride_choice", {
+            "monthly_rides": 44, "fare_per_ride": 1550, "age": 68,
+            "residence": "대구", "as_of_date": "2026-07-08"})
+        assert "A. 무임카드 이용 | 0원" in r.content[0].text
+
+
 async def test_free_ride_choice_rejects_bad_input():
     async with Client(mcp) as c:
         r = await c.call_tool("simulate_free_ride_choice",
