@@ -116,6 +116,9 @@ def compare_passes_for_commute(
                        inp.children_count, inp.is_first_month,
                        inp.has_postpaid_climate_card)   # free_ride_status는 caveat에서만 사용 (T7 리뷰)
     caveats = []
+    if inp.age < 19:      # 모두의카드는 19세 이상만 가입 — 미성년자에게 최적 추천이 오도되지 않도록
+        caveats.append("모두의카드는 만 19세 이상만 가입 가능합니다 — 미성년자는 지자체 즉시할인·"
+                       "경기 어린이청소년 교통비 지원·기후동행카드 등을 확인하세요.")
     if pattern.spend_only:
         caveats.append("총액만 입력되어 수단 구성·15회 요건 확인이 제한적입니다. "
                        "탑승 횟수와 수단을 알려주시면 더 정확해집니다.")

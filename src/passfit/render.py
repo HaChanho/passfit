@@ -4,6 +4,8 @@ from passfit.engine import PassOption
 CAT_KO = {"general": "일반", "youth": "청년", "senior": "어르신",
           "multi_child_2": "2자녀", "multi_child_3": "3자녀+", "low_income": "저소득"}
 
+BENEFIT_KO = {"half-price": "반값 기준금액", "offpeak-bonus": "시차시간 할증"}
+
 
 def _rates_line(rates: dict) -> str:
     order = ["general", "youth", "senior", "multi_child_2", "multi_child_3", "low_income"]
@@ -35,7 +37,7 @@ def render_pass_details(p: dict, base: dict | None = None) -> str:
             if parts:
                 override_lines.append(f"  - **{sido}**: {', '.join(parts)}")
         override_block = "\n".join(override_lines)
-        temp = ", ".join(f"{b['id']} ({b['valid_from']}~{b['valid_until']})"
+        temp = ", ".join(f"{BENEFIT_KO.get(b['id'], b['id'])} ({b['valid_from']}~{b['valid_until']})"
                           for b in p.get("temporary_benefits", []))
         return (
             f"## {p['name']}\n"

@@ -49,6 +49,23 @@ async def test_details_and_list_policies():
         assert "기후동행카드 플러스" in l.content[0].text
 
 
+async def test_compare_warns_minor_cannot_join_modu():
+    # 19세 미만은 모두의카드 가입 불가 — compare가 최적으로 추천하되 경고를 달아야 (M3).
+    async with Client(mcp) as c:
+        r = await c.call_tool("compare_passes_for_commute", {
+            "monthly_rides": 44, "fare_per_ride": 1550, "age": 15, "residence": "서울"})
+        assert "만 19세 이상" in r.content[0].text
+
+
+async def test_details_use_korean_benefit_labels_not_slugs():
+    # 상세 페이지에 내부 슬러그(half-price/offpeak-bonus)가 노출되면 안 됨 (m9).
+    async with Client(mcp) as c:
+        d = await c.call_tool("get_pass_details", {"pass_id": "modu-card"})
+        text = d.content[0].text
+        assert "half-price" not in text and "offpeak-bonus" not in text
+        assert "반값" in text
+
+
 async def test_eligibility_enforces_age_min():
     async with Client(mcp) as c:
         r = await c.call_tool("check_pass_eligibility",
