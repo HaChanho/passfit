@@ -35,3 +35,11 @@ def test_busan_district_not_misread_as_daegu():
     assert r.sido == "부산"          # '해운대' alias가 '대구' 부분일치를 이김
     r2 = resolve_region("부산 해운대구")
     assert r2.sido == "부산"
+
+
+def test_gyeongnam_province_and_cities_resolve():
+    # 경남은 regional_overrides(저소득 100%)를 가지지만, 광역 지명·창원/김해/양산/진주
+    # 외 도시는 미해석되어 전국(53.3%)으로 오계산되던 버그 회귀.
+    for text in ["경남", "경상남도", "경남 통영시", "경상남도 거제시", "통영", "밀양"]:
+        assert resolve_region(text).sido == "경남", text
+    assert resolve_region("경남").region_class == "일반지방권"

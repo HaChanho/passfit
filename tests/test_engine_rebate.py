@@ -20,6 +20,13 @@ def test_gwangju_overrides():
     cat, rate = determine_category(MODU, 70, "광주", "general", 0)
     assert cat == "senior" and rate == 0.50
 
+def test_gyeongnam_low_income_100pct_via_province_name():
+    # "경남" 광역 지명으로 입력해도 저소득 100% override가 적용되어야 (C2 회귀).
+    from passfit.normalize import resolve_region
+    sido = resolve_region("경남").sido
+    cat, rate = determine_category(MODU, 40, sido, "low_income", 0)
+    assert cat == "low_income" and rate == 1.00
+
 def test_rebate_below_15_rides_is_zero():
     r = calc_modu_rebate(MODU, pat(rides=14), "general", 0.20, ref=date(2026, 7, 31), is_first_month=False)
     assert r.rebate == 0 and "15회" in r.note
