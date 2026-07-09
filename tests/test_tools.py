@@ -3,6 +3,15 @@ from fastmcp import Client
 from passfit.server import mcp
 
 
+async def test_all_tool_descriptions_carry_service_name():
+    # PlayMCP 심사 요건: 각 도구 description에 등록 서비스명이 포함돼야 함 (반려 사유 회귀).
+    SERVICE = "패스핏 – 교통패스 비교"
+    async with Client(mcp) as c:
+        tools = await c.list_tools()
+        missing = [t.name for t in tools if SERVICE not in (t.description or "")]
+        assert not missing, f"서비스명 누락: {missing}"
+
+
 async def test_list_tools_has_seven_with_annotations():
     async with Client(mcp) as c:
         tools = {t.name: t for t in await c.list_tools()}
