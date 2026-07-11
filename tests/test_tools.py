@@ -12,6 +12,37 @@ async def test_all_tool_descriptions_carry_service_name():
         assert not missing, f"서비스명 누락: {missing}"
 
 
+async def test_tool_descriptions_are_concise():
+    # 담백 스타일(A): 서비스명 접두 유지, 영어 트리거 덤프 제거, 짧게.
+    async with Client(mcp) as c:
+        for t in await c.list_tools():
+            d = t.description or ""
+            assert d.startswith("패스핏 – 교통패스 비교"), t.name
+            assert "Use when" not in d, t.name
+            assert len(d) < 350, f"{t.name}={len(d)}"
+
+
+async def test_climate_negative_rebate_shows_zero():
+    # B(m6): 저이용 서울 사용자 — 기후동행카드는 종량제보다 손해라 rebate 음수지만 표엔 0원.
+    async with Client(mcp) as c:
+        r = await c.call_tool("compare_passes_for_commute", {
+            "monthly_rides": 20, "fare_per_ride": 1550, "age": 30,
+            "residence": "서울", "as_of_date": "2026-07-08"})
+        text = r.content[0].text
+        assert "기후동행카드" in text and "-31,000" not in text
+
+
+async def test_headline_no_duplicate_card_name():
+    # C: 결론 헤드라인에 카드명이 중복되지 않아야.
+    async with Client(mcp) as c:
+        r = await c.call_tool("compare_passes_for_commute", {
+            "monthly_rides": 30, "fare_per_ride": 1550, "age": 30,
+            "residence": "서울", "as_of_date": "2026-07-08"})
+        text = r.content[0].text
+        assert "모두의카드 (구 K-패스) — 정액형(일반형)" in text
+        assert "(모두의카드 정액형" not in text
+
+
 async def test_list_tools_has_seven_with_annotations():
     async with Client(mcp) as c:
         tools = {t.name: t for t in await c.list_tools()}

@@ -96,18 +96,10 @@ def compare_passes_for_commute(
     as_of_date: str | None = None,
     detail: Literal["concise", "detailed"] = "concise",
 ) -> str:
-    """패스핏 – 교통패스 비교. Compare all 2026 Korean transit passes for a commute pattern and rank by
-    real monthly cost, from PassFit(패스핏). Use when the user asks which transit
-    pass/card saves money — e.g. '교통비 아끼는 법', 'K-패스랑 기후동행카드 뭐가 이득?',
-    '월 교통비 12만원인데 아낄 방법?'. If the user only knows weekly commute days,
-    convert: 주 5일 왕복 ≈ monthly_rides 44. Use `rides` (list) when user mixes
-    multiple modes with different fares — e.g. '지하철 30회 + 광역버스 15회'
-    → rides=[{mode:subway, fare_per_ride:1550, monthly_rides:30}, {mode:metropolitan_bus,
-    fare_per_ride:3000, monthly_rides:15}]. offpeak_rides = 출퇴근 시차시간
-    (05:30~06:30/09~10/16~17/19~20시) 승차 횟수 — 한시 환급 할증 대상.
-    residence는 미상 시 생략 가능 (전국 기준). **income_level은 반드시 'general'
-    또는 'low_income'** — 사용자가 '저소득/저소득자/기초생활수급자/차상위'라고 하면
-    'low_income'으로 매핑해 넣으세요."""
+    """패스핏 – 교통패스 비교. 통근 패턴(승차 횟수·요금·거주지·나이)으로 2026년 모두의카드·
+    기후동행카드·지자체 패스를 교차 계산해 월 실질 부담 순위와 절약액을 정리합니다.
+    주 5일 왕복이면 monthly_rides는 약 44, 여러 수단을 섞으면 rides 리스트를 씁니다.
+    income_level은 'general'/'low_income'이며 '저소득' 등은 low_income으로 넣습니다."""
     inp = _build_commute_input(
         monthly_rides, fare_per_ride, monthly_spend, rides, offpeak_rides,
         age, residence, income_level, children_count, is_first_month,
@@ -142,8 +134,7 @@ def compare_passes_for_commute(
 
 @mcp.tool(annotations={"title": "패스 목록", **RO})
 def list_transit_passes(region: str | None = None) -> str:
-    """패스핏 – 교통패스 비교. List available Korean transit passes(교통패스 목록) from PassFit(패스핏),
-    optionally filtered by region (e.g. '서울', '부산')."""
+    """패스핏 – 교통패스 비교. 지원하는 2026년 교통패스 목록을 지역별로 정리해 보여줍니다."""
     data = load_passes()
     sido = resolve_region(region).sido if region else None
     lines = ["| 패스 | 유형 | 대상 | 상태 |", "|---|---|---|---|"]
@@ -165,13 +156,9 @@ def list_transit_passes(region: str | None = None) -> str:
 def get_pass_details(pass_id: Literal["modu-card", "climate-card-legacy",
                                       "climate-card-plus", "dongbaek-pass",
                                       "eung-pass"]) -> str:
-    """패스핏 – 교통패스 비교. Get details(자격·환급률·기준금액·신청 방법·유효기간·언제까지) of one Korean
-    transit pass from PassFit(패스핏). Use when user asks '자세히 알려줘',
-    '자세한 설명', '어디서 신청', '언제까지 쓸 수 있어', '유효기간', '어떻게 가입'
-    about a specific pass. Valid pass_id: modu-card(모두의카드),
-    climate-card-legacy(기후동행카드), climate-card-plus(기후동행카드 플러스),
-    dongbaek-pass(부산 동백패스), eung-pass(세종 이응패스). Discover ids via
-    list_transit_passes."""
+    """패스핏 – 교통패스 비교. 패스 하나의 자격·환급률·기준금액·신청 방법·유효기간을
+    서술형으로 설명합니다. pass_id는 modu-card(모두의카드)·climate-card-legacy(기후동행카드)·
+    climate-card-plus(기후동행카드 플러스)·dongbaek-pass(부산 동백패스)·eung-pass(세종 이응패스)."""
     data = load_passes()
     p = next(x for x in data["passes"] if x["id"] == pass_id)
     base = None
@@ -200,14 +187,9 @@ def simulate_pass_savings(
     as_of_date: str | None = None,
     detail: Literal["concise", "detailed"] = "concise",
 ) -> str:
-    """패스핏 – 교통패스 비교. Simulate monthly/yearly savings(월·연 절약액) for ONE specific pass from
-    PassFit(패스핏). Use when user names a specific pass('K-패스 하나만', '기후동행카드로만',
-    '모두의카드만 계산해줘', '이 카드 얼마 절약돼?'). For comparing across multiple
-    passes, use compare_passes_for_commute instead. Valid pass_id: modu-card(모두의카드),
-    climate-card-legacy(기후동행카드), climate-card-plus(기후동행카드 플러스),
-    dongbaek-pass(부산 동백패스), eung-pass(세종 이응패스). Discover ids via
-    list_transit_passes. offpeak_rides = 출퇴근 시차시간(05:30~06:30/09~10/16~17/
-    19~20시) 승차 횟수 — 한시 환급 할증 대상."""
+    """패스핏 – 교통패스 비교. 지정한 패스 하나의 월·연 절약액을 통근 패턴 기준으로 계산합니다.
+    여러 패스를 한 번에 비교하려면 compare_passes_for_commute를 사용하세요.
+    pass_id는 modu-card·climate-card-legacy·climate-card-plus·dongbaek-pass·eung-pass."""
     data = load_passes()
     p = next(x for x in data["passes"] if x["id"] == pass_id)
     if p.get("simulate_policy") == "alias_to_base":            # plus → modu-card
@@ -260,13 +242,9 @@ def check_pass_eligibility(age: int, residence: str = "",
                            children_count: int = 0, is_first_month: bool = False,
                            free_ride_status: Literal["none", "eligible",
                                                      "uses_free_ride_card"] = "none") -> str:
-    """패스핏 – 교통패스 비교. Check which Korean transit passes the user qualifies for(자격 확인·가입 가능
-    여부·환급률 조회), with reasons, from PassFit(패스핏). Use when the user asks
-    '자격 되나요', 'K-패스 가입 가능?', '나 신청할 수 있어?', '몇 살부터 돼?',
-    '내 환급률이 얼마?'. 모두의카드·부산 동백패스·세종 이응패스의 자격을 확인합니다
-    (기후동행카드는 이용 가능 여부라 compare에서 다룸). residence는 미상 시 생략 가능.
-    **income_level은 반드시 'general' 또는 'low_income'** — 사용자가 '저소득/저소득자/
-    기초생활수급자/차상위'라고 하면 'low_income'으로 매핑해 넣으세요."""
+    """패스핏 – 교통패스 비교. 나이·거주지·소득으로 모두의카드·부산 동백패스·세종 이응패스의
+    가입 자격과 환급률을 확인합니다 (기후동행카드는 이용 가능 여부라 compare에서 다룸).
+    income_level은 'general'/'low_income'이며 '저소득' 등은 low_income으로 넣습니다."""
     # income_level 한국어 alias → enum 매핑 (LLM이 '저소득'을 그대로 넘기는 케이스)
     income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)
     if income_level not in ("general", "low_income"):
@@ -309,13 +287,9 @@ def find_breakeven_rides(
     children_count: int = 0,
     as_of_date: str | None = None,
 ) -> str:
-    """패스핏 – 교통패스 비교. Find the breakeven monthly_rides count for Korean transit passes,
-    from PassFit(패스핏). 모두의카드에서 (1) 15회 최소요건을 넘는 지점,
-    (2) 정률형→정액형 전환점을 자동 탐색하고, 해당 요금대에서 일반형·플러스형
-    중 어느 정액형이 최적인지 함께 요약. Use when the user asks '몇 번(회)부터 이득/유리?', '손익분기점',
-    '주 몇 일 타면 정액이 유리?', '월 몇 번 타야 이득?', '언제부터 본전?'.
-    fare_per_ride는 1회 요금 (원). **income_level은 'general' 또는 'low_income'만
-    허용** — '저소득/기초생활수급자/차상위' → 'low_income'."""
+    """패스핏 – 교통패스 비교. 모두의카드에서 월 몇 회부터 이득인지(15회 요건)와 정률형→정액형
+    전환점을 요금 기준으로 계산하고, 해당 요금대의 최적 정액형(일반형/플러스형)을 함께 알려줍니다.
+    fare_per_ride는 1회 요금(원), income_level은 'general'/'low_income'."""
     if fare_per_ride <= 0:
         raise ToolError("fare_per_ride는 양수여야 합니다.")
     income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)
@@ -402,13 +376,9 @@ def simulate_free_ride_choice(
     income_level: Literal["general", "low_income"] = "general",
     as_of_date: str | None = None,
 ) -> str:
-    """패스핏 – 교통패스 비교. Compare '무임카드 이용(결제 0원)' vs '유임 결제 + 모두의카드 환급'
-    for eligible free-ride users(65+·70+ etc.), from PassFit(패스핏).
-    두 시나리오의 실제 월 부담을 나란히 계산해 어느 쪽이 유리한지 알려줌
-    (도시철도 무임 개시 연령은 지역별 상이 — 전국 65세·대구 68세, 미달 시 유임+환급만 안내).
-    Use when user asks about 부모님·어르신·노인·경로우대 대중교통, 무임/무료 지하철·
-    버스, 65세·70세 이상 교통비, or user themself is 65+. **income_level은 'general'
-    또는 'low_income'** — '저소득' → 'low_income'."""
+    """패스핏 – 교통패스 비교. 65세 이상 무임카드(결제 0원)와 유임 결제+모두의카드 환급 중
+    어느 쪽이 유리한지 비교합니다. 도시철도 무임 개시 연령은 지역별로 다릅니다(전국 65세·대구 68세).
+    승차 수단은 지하철로 가정합니다."""
     if monthly_rides <= 0 or fare_per_ride <= 0:
         raise ToolError("monthly_rides·fare_per_ride는 양수여야 합니다.")
     income_level = INCOME_LEVEL_ALIASES.get(income_level, income_level)

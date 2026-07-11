@@ -88,7 +88,7 @@ def _meets_min_rides(pass_def: dict, pattern: Pattern, is_first_month: bool) -> 
 
 def calc_modu_rebate(pass_def: dict, pattern: Pattern, category: str, rate: float,
                      ref: date, is_first_month: bool) -> CalcResult:
-    label = "모두의카드 기본형(정률)"
+    label = "기본형(정률)"
     spend = pattern.total_spend
     rides = pattern.total_rides
     cond = pass_def["conditions"]
@@ -138,7 +138,7 @@ def calc_modu_flat(pass_def: dict, pattern: Pattern, category: str, region_class
         warnings.append(f"광역버스·GTX·신분당선 등 {excluded:,}원은 일반형 미적용 (플러스형 필요)")
     if pattern.spend_only:
         warnings.append("수단 구성을 알 수 없어 일반형/플러스형 분기가 정확하지 않을 수 있습니다")
-    return CalcResult(f"모두의카드 정액형({name})", rebate,
+    return CalcResult(f"정액형({name})", rebate,
                       pattern.total_spend - rebate, note, tuple(warnings))
 
 def calc_modu_best(pass_def: dict, pattern: Pattern, age: int, sido: str | None,
@@ -148,7 +148,7 @@ def calc_modu_best(pass_def: dict, pattern: Pattern, age: int, sido: str | None,
     # 15회 최소 이용 요건은 정률·정액 공통 (정본 §2). 미달 시 세 방식 모두 환급 0.
     if not _meets_min_rides(pass_def, pattern, is_first_month):
         cond = pass_def["conditions"]
-        return CalcResult("모두의카드", 0, pattern.total_spend,
+        return CalcResult("기본형(정률)", 0, pattern.total_spend,
                           note=f"월 {cond['min_rides_month']}회 미만이라 환급 없음 (가입 첫 달은 예외)")
     options = [
         calc_modu_rebate(pass_def, pattern, category, rate, ref, is_first_month),
@@ -196,12 +196,12 @@ def calc_climate_legacy(p: dict, pattern: Pattern, ref: date,
         warns_t += (f"신분당선·GTX·광역버스 {uncovered:,}원은 별도 부담 (기동카 미적용)",)
     # legacy(정액권)만 rebate가 음수 가능 = 이용량이 적어 종량제보다 손해라는 뜻.
     # 다른 패스(동백·이응)는 항상 0 이상. 음수도 그대로 노출하고 랭킹은 net_cost 기준.
-    return PassOption(p["id"], p["name"], "기후동행카드 30일권", rebate,
+    return PassOption(p["id"], p["name"], "30일권", rebate,
                       net, note, warns_t, _srcs(p))
 
 def calc_dongbaek(p: dict, pattern: Pattern) -> PassOption:
     rebate = max(0, pattern.total_spend - p["threshold"])
-    return PassOption(p["id"], p["name"], "동백패스(4.5만 초과 환급)", rebate,
+    return PassOption(p["id"], p["name"], "4.5만원 초과 환급", rebate,
                       pattern.total_spend - rebate,
                       note="K-패스 동시 가입 시 유리한 금액 자동 적용",
                       warnings=("부산 수단·실물 동백전 카드 결제만 인정",), sources=_srcs(p))
@@ -209,7 +209,7 @@ def calc_dongbaek(p: dict, pattern: Pattern) -> PassOption:
 def calc_eung(p: dict, pattern: Pattern) -> PassOption:
     covered = min(pattern.total_spend, p["monthly_cap"])
     net = p["monthly_price"] + max(0, pattern.total_spend - p["monthly_cap"])
-    return PassOption(p["id"], p["name"], "이응패스(월 2만원)", covered - p["monthly_price"], net,
+    return PassOption(p["id"], p["name"], "월 2만원 정액", covered - p["monthly_price"], net,
                       note="월 5만원 한도, 세종권 6개 시 적용", sources=_srcs(p))
 
 def compare_all(pattern: Pattern, ref: date, age: int, residence: str,
